@@ -45,6 +45,7 @@ impl Language {
             (Language::Chinese, "monitor_nat_rules") => "NAT 规则 (Masquerade)",
             (Language::Chinese, "monitor_port_rules") => "端口转发规则 (DNAT/Redirect)",
             (Language::Chinese, "monitor_listen_ports") => "活跃监听端口 (TCP/UDP)",
+            (Language::Chinese, "msg_det_failed") => "检测失败 (权限不足)",
             
             (Language::English, "nav_share") => "Network Share",
             (Language::English, "nav_forward") => "Port Forwarders",
@@ -73,6 +74,7 @@ impl Language {
             (Language::English, "monitor_nat_rules") => "NAT Rules (Masquerade)",
             (Language::English, "monitor_port_rules") => "Port Forward Rules (DNAT/Redirect)",
             (Language::English, "monitor_listen_ports") => "Active Listening Ports (TCP/UDP)",
+            (Language::English, "msg_det_failed") => "Detection failed (Permission denied)",
             _ => "Unknown",
         }
     }
@@ -244,7 +246,7 @@ impl Application for ForwarderApp {
                 // 如果检测失败（通常是权限问题），我们不应该盲目地将状态设为 Inactive
                 // 而是保留当前的 sys_active 状态，并给出提示
                 if failed {
-                    self.sys_status = "Detection failed (Permission denied)".to_string();
+                    self.sys_status = self.language.get("msg_det_failed").to_string();
                 } else {
                     self.sys_active = active;
                     if active && !wans.is_empty() {
