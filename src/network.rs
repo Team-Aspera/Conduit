@@ -1,17 +1,13 @@
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::io::copy_bidirectional;
 use anyhow::Result;
-use tracing::{info, error};
-use tokio::sync::watch;
-use pnet::datalink;
-use std::process::Command;
-use std::sync::Arc;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use tokio::sync::Mutex;
-use std::time::{Duration, Instant};
-
-// --- 系统信息结构 ---
+use std::sync::Arc;
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::io::copy_bidirectional;
+use tokio::sync::{watch, Mutex};
+use tokio::time::{Duration, Instant};
+use std::process::Command;
+use pnet::datalink;
 
 #[derive(Debug, Clone)]
 pub struct SystemReport {
@@ -28,7 +24,10 @@ pub struct InterfaceInfo {
 }
 
 pub fn get_interfaces() -> Vec<InterfaceInfo> {
-    datalink::interfaces().into_iter().map(|iface| InterfaceInfo { name: iface.name }).collect()
+    datalink::interfaces()
+        .into_iter()
+        .map(|i| InterfaceInfo { name: i.name })
+        .collect()
 }
 
 pub fn get_system_network_report() -> SystemReport {
@@ -104,7 +103,6 @@ pub fn detect_system_forward_status() -> (bool, Vec<String>, bool) {
 pub fn start_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str, mask: &str) -> std::io::Result<()> {
     let mut commands = Vec::new();
     commands.push("echo 1 > /proc/sys/net/ipv4/ip_forward".to_string());
-    // 移除了 flush，改为尝试添加地址并忽略已存在的错误，减少对现有连接的干扰
     commands.push(format!("ip addr add {}/{} dev {} 2>/dev/null || true", host_ip, mask, lan_if));
     commands.push(format!("ip link set {} up", lan_if));
     for wan_if in wan_ifs {
@@ -125,7 +123,6 @@ pub fn stop_system_forwarding(wan_ifs: Vec<String>, lan_if: &str) -> std::io::Re
         commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
         commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true", lan_if, wan_if));
     }
-    // 彻底停止：关闭内核转发开关
     commands.push("echo 0 > /proc/sys/net/ipv4/ip_forward".to_string());
     run_batch_as_root(commands)
 }
@@ -158,7 +155,6 @@ pub async fn start_tcp_forward(
                     let mut stop_rx_clone = stop_rx.clone();
                     tokio::spawn(async move {
                         if let Ok(mut server) = TcpStream::connect(&d).await {
-                            // 当 stop_rx 改变时，双向拷贝也会被强制终止（通过 select）
                             tokio::select! {
                                 _ = copy_bidirectional(&mut client, &mut server) => {},
                                 _ = stop_rx_clone.changed() => {},
@@ -235,6 +231,5 @@ pub async fn start_udp_forward(
             }
         }
     }
-    // 主循环退出，Arc 计数减少。子任务也会因为 stop_rx 信号而退出
     Ok(())
 }
