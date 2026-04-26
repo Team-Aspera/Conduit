@@ -145,7 +145,11 @@ impl container::StyleSheet for ContentStyle {
 
 pub fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
-    ForwarderApp::run(Settings::default())
+    ForwarderApp::run(Settings {
+        fonts: vec![include_bytes!("../assets/fonts/LXGWWenKaiLite-Regular.ttf").as_slice().into()],
+        default_font: iced::Font::with_name("LXGW WenKai Lite"),
+        ..Settings::default()
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
