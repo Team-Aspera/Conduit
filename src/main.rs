@@ -8,6 +8,7 @@ use network::SystemReport;
 use serde::{Serialize, Deserialize};
 use std::fs;
 use std::path::PathBuf;
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Language {
@@ -46,6 +47,12 @@ impl Language {
             (Language::Chinese, "monitor_port_rules") => "端口转发规则 (DNAT/Redirect)",
             (Language::Chinese, "monitor_listen_ports") => "活跃监听端口 (TCP/UDP)",
             (Language::Chinese, "msg_det_failed") => "检测失败 (权限不足)",
+            (Language::Chinese, "msg_select_wan") => "请选择至少一个外网接口",
+            (Language::Chinese, "msg_select_lan") => "请选择目标接口",
+            (Language::Chinese, "msg_stopping") => "正在停止...",
+            (Language::Chinese, "msg_starting") => "正在启动...",
+            (Language::Chinese, "msg_stopped") => "已停止",
+            (Language::Chinese, "msg_active_bang") => "活跃!",
             
             (Language::English, "nav_share") => "Network Share",
             (Language::English, "nav_forward") => "Port Forwarders",
@@ -75,6 +82,12 @@ impl Language {
             (Language::English, "monitor_port_rules") => "Port Forward Rules (DNAT/Redirect)",
             (Language::English, "monitor_listen_ports") => "Active Listening Ports (TCP/UDP)",
             (Language::English, "msg_det_failed") => "Detection failed (Permission denied)",
+            (Language::English, "msg_select_wan") => "Select at least one WAN",
+            (Language::English, "msg_select_lan") => "Select LAN interface",
+            (Language::English, "msg_stopping") => "Stopping...",
+            (Language::English, "msg_starting") => "Starting...",
+            (Language::English, "msg_stopped") => "Stopped",
+            (Language::English, "msg_active_bang") => "Active!",
             _ => "Unknown",
         }
     }
@@ -145,7 +158,7 @@ struct ForwarderApp {
     host_ip: String,
     subnet_mask: String,
     sys_active: bool,
-    sys_status: String,
+    sys_status: Cow<'static, str>,
 
     // 系统监控报告
     system_report: Option<SystemReport>,
@@ -208,18 +221,19 @@ impl Application for ForwarderApp {
 
         let (sys_active, active_wans, _) = network::detect_system_forward_status();
         let report = network::get_system_network_report();
+        let default_lang = Language::Chinese;
 
         (
             Self {
                 current_page: Page::SystemForward,
-                language: Language::Chinese,
+                language: default_lang,
                 interfaces: ifaces,
                 selected_wans: active_wans,
                 lan_interface: None,
                 host_ip: "192.168.10.1".to_string(),
                 subnet_mask: "24".to_string(),
                 sys_active,
-                sys_status: if sys_active { Language::Chinese.get("status_active").to_string() } else { Language::Chinese.get("status_ready").to_string() },
+                sys_status: if sys_active { default_lang.get("status_active").into() } else { default_lang.get("status_ready").into() },
                 system_report: Some(report),
                 refresh_interval: 1,
                 port_forwarders: vec![],
@@ -232,7 +246,13 @@ impl Application for ForwarderApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::LanguageChanged(lang) => self.language = lang,
+            Message::LanguageChanged(lang) => {
+                self.language = lang;
+                // 刷新系统状态文字
+                let status_key = if self.sys_active { "status_active" } else { "status_ready" };
+                // 如果当前正在显示某些临时消息（如错误提示），简单刷新为就绪/活跃状态
+                self.sys_status = self.language.get(status_key).into();
+            }
             Message::SwitchPage(page) => self.current_page = page,
             Message::RefreshInterfaces => {
                 self.interfaces = network::get_interfaces().into_iter().filter(|i| {
@@ -252,14 +272,14 @@ impl Application for ForwarderApp {
                 // 如果检测失败（通常是权限问题），我们不应该盲目地将状态设为 Inactive
                 // 而是保留当前的 sys_active 状态，并给出提示
                 if failed {
-                    self.sys_status = self.language.get("msg_det_failed").to_string();
+                    self.sys_status = self.language.get("msg_det_failed").into();
                 } else {
                     self.sys_active = active;
                     if active && !wans.is_empty() {
                         self.selected_wans = wans;
                     }
                     let status_key = if active { "status_active" } else { "status_ready" };
-                    self.sys_status = self.language.get(status_key).to_string();
+                    self.sys_status = self.language.get(status_key).into();
                 }
             }
             Message::WanToggled(name, active) => {
@@ -277,19 +297,19 @@ impl Application for ForwarderApp {
                 let mask = self.subnet_mask.clone();
 
                 if let Some(l) = lan {
-                    if wans.is_empty() { self.sys_status = "Select at least one WAN".to_string(); return Command::none(); }
-                    self.sys_status = if active { "Stopping..." } else { "Starting..." }.to_string();
+                    if wans.is_empty() { self.sys_status = self.language.get("msg_select_wan").into(); return Command::none(); }
+                    self.sys_status = if active { self.language.get("msg_stopping").into() } else { self.language.get("msg_starting").into() };
                     return Command::perform(async move {
                         let res = if active { network::stop_system_forwarding(wans, &l) } 
                                  else { network::start_system_forwarding(wans, &l, &host_ip, &mask) };
                         res.map_err(|e| e.to_string())
                     }, move |res| Message::SysForwardingResult(!active, res));
-                } else { self.sys_status = "Select LAN interface".to_string(); }
+                } else { self.sys_status = self.language.get("msg_select_lan").into(); }
             }
             Message::SysForwardingResult(target, res) => {
                 match res {
-                    Ok(_) => { self.sys_active = target; self.sys_status = if target { "Active!" } else { "Stopped" }.to_string(); }
-                    Err(e) => self.sys_status = format!("Error: {}", e),
+                    Ok(_) => { self.sys_active = target; self.sys_status = if target { self.language.get("msg_active_bang").into() } else { self.language.get("msg_stopped").into() }; }
+                    Err(e) => self.sys_status = format!("{}: {}", if self.language == Language::Chinese { "错误" } else { "Error" }, e).into(),
                 }
             }
 
