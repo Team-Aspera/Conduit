@@ -431,14 +431,23 @@ impl Application for ForwarderApp {
 
         let content: Element<Message> = match self.current_page {
             Page::About => {
-                column![
-                    text("Conduit").size(40),
-                    text("Version 0.2.0").size(18),
-                    vertical_space().height(20),
-                    text(lang.get("about_desc")).size(16),
-                    text("GitHub: github.com/xjimlinx/Conduit").size(12),
-                    text("Built with Iced & Tokio").size(12),
-                ].spacing(10).align_items(Alignment::Center).into()
+                container(
+                    column![
+                        text("Conduit").size(40),
+                        text("Version 0.2.0").size(18),
+                        vertical_space().height(20),
+                        text(lang.get("about_desc")).size(16),
+                        text("GitHub: github.com/xjimlinx/Conduit").size(12),
+                        text("Built with Iced & Tokio").size(12),
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center)
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x()
+                .center_y()
+                .into()
             }
             Page::SystemMonitor => {
                 if let Some(report) = &self.system_report {
