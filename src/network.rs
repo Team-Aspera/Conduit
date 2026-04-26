@@ -20,6 +20,7 @@ pub struct SystemReport {
     pub port_forwards: Vec<String>,
     pub listening_ports: Vec<String>,
     pub active_connections: Vec<String>,
+    pub iptables_failed: bool,
 }
 
 pub struct InterfaceInfo {
@@ -37,6 +38,7 @@ pub fn get_system_network_report() -> SystemReport {
         port_forwards: vec![],
         listening_ports: vec![],
         active_connections: vec![],
+        iptables_failed: false,
     };
 
     report.ip_forward_enabled = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
@@ -52,7 +54,11 @@ pub fn get_system_network_report() -> SystemReport {
                     report.port_forwards.push(line.to_string());
                 }
             }
+        } else {
+            report.iptables_failed = true;
         }
+    } else {
+        report.iptables_failed = true;
     }
 
     if let Ok(output) = Command::new("ss").args(["-tlnpu"]).output() {
@@ -78,7 +84,7 @@ pub fn get_system_network_report() -> SystemReport {
     report
 }
 
-pub fn detect_system_forward_status() -> (bool, Vec<String>) {
+pub fn detect_system_forward_status() -> (bool, Vec<String>, bool) {
     let report = get_system_network_report();
     let mut active_wans = Vec::new();
     for rule in &report.nat_masquerade {
@@ -89,7 +95,8 @@ pub fn detect_system_forward_status() -> (bool, Vec<String>) {
             }
         }
     }
-    (report.ip_forward_enabled && !active_wans.is_empty(), active_wans)
+    let active = report.ip_forward_enabled && !active_wans.is_empty();
+    (active, active_wans, report.iptables_failed)
 }
 
 // --- 系统转发控制 ---

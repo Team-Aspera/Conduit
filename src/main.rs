@@ -202,7 +202,7 @@ impl Application for ForwarderApp {
             .map(|i| i.name)
             .collect();
 
-        let (sys_active, active_wans) = network::detect_system_forward_status();
+        let (sys_active, active_wans, _) = network::detect_system_forward_status();
         let report = network::get_system_network_report();
 
         (
@@ -215,7 +215,7 @@ impl Application for ForwarderApp {
                 host_ip: "192.168.10.1".to_string(),
                 subnet_mask: "24".to_string(),
                 sys_active,
-                sys_status: if sys_active { "Active (Detected)".to_string() } else { "Ready".to_string() },
+                sys_status: if sys_active { Language::Chinese.get("status_active").to_string() } else { Language::Chinese.get("status_ready").to_string() },
                 system_report: Some(report),
                 port_forwarders: vec![],
             },
@@ -239,14 +239,20 @@ impl Application for ForwarderApp {
                 self.system_report = Some(network::get_system_network_report());
             }
             Message::DetectSystemForward => {
-                let (active, wans) = network::detect_system_forward_status();
-                self.sys_active = active;
-                // 只有在检测到活跃转发时才更新选择的网卡列表，避免误清空用户之前的选择
-                if active && !wans.is_empty() {
-                    self.selected_wans = wans;
+                let (active, wans, failed) = network::detect_system_forward_status();
+                
+                // 如果检测失败（通常是权限问题），我们不应该盲目地将状态设为 Inactive
+                // 而是保留当前的 sys_active 状态，并给出提示
+                if failed {
+                    self.sys_status = "Detection failed (Permission denied)".to_string();
+                } else {
+                    self.sys_active = active;
+                    if active && !wans.is_empty() {
+                        self.selected_wans = wans;
+                    }
+                    let status_key = if active { "status_active" } else { "status_ready" };
+                    self.sys_status = self.language.get(status_key).to_string();
                 }
-                let status_key = if active { "status_active" } else { "status_ready" };
-                self.sys_status = self.language.get(status_key).to_string();
             }
             Message::WanToggled(name, active) => {
                 if active { self.selected_wans.push(name); }
