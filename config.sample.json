@@ -1,0 +1,9 @@
+[
+  {
+    "protocol": "TCP",
+    "src_addr": "0.0.0.0",
+    "src_port": "8080",
+    "dst_addr": "127.0.0.1",
+    "dst_port": "8080"
+  }
+]

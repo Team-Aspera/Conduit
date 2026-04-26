@@ -11,40 +11,94 @@ use std::net::SocketAddr;
 use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
 
-// --- 系统转发相关 ---
+// --- 系统信息结构 ---
+
+#[derive(Debug, Clone)]
+pub struct SystemReport {
+    pub ip_forward_enabled: bool,
+    pub nat_masquerade: Vec<String>,
+    pub port_forwards: Vec<String>,
+    pub listening_ports: Vec<String>,
+    pub active_connections: Vec<String>,
+}
 
 pub struct InterfaceInfo {
     pub name: String,
 }
 
 pub fn get_interfaces() -> Vec<InterfaceInfo> {
-    datalink::interfaces()
-        .into_iter()
-        .map(|iface| InterfaceInfo {
-            name: iface.name,
-        })
-        .collect()
+    datalink::interfaces().into_iter().map(|iface| InterfaceInfo { name: iface.name }).collect()
 }
 
-pub fn start_system_forwarding(
-    wan_ifs: Vec<String>,
-    lan_if: &str,
-    host_ip: &str,
-    mask: &str,
-) -> std::io::Result<()> {
+pub fn get_system_network_report() -> SystemReport {
+    let mut report = SystemReport {
+        ip_forward_enabled: false,
+        nat_masquerade: vec![],
+        port_forwards: vec![],
+        listening_ports: vec![],
+        active_connections: vec![],
+    };
+
+    report.ip_forward_enabled = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
+        .unwrap_or_default().trim() == "1";
+
+    if let Ok(output) = Command::new("iptables").args(["-t", "nat", "-S"]).output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains("MASQUERADE") {
+                report.nat_masquerade.push(line.to_string());
+            } else if line.contains("DNAT") || line.contains("REDIRECT") {
+                report.port_forwards.push(line.to_string());
+            }
+        }
+    }
+
+    if let Ok(output) = Command::new("ss").args(["-tlnpu"]).output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines().skip(1) {
+            report.listening_ports.push(line.to_string());
+        }
+    }
+
+    if let Ok(output) = Command::new("ss").args(["-apn"]).output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains("conduit") && (line.contains("ESTAB") || line.contains("LISTEN") || line.contains("UNCONN")) {
+                report.active_connections.push(line.to_string());
+            }
+        }
+    }
+
+    report
+}
+
+pub fn detect_system_forward_status() -> (bool, Vec<String>) {
+    let report = get_system_network_report();
+    let mut active_wans = Vec::new();
+    for rule in &report.nat_masquerade {
+        let parts: Vec<&str> = rule.split_whitespace().collect();
+        if let Some(pos) = parts.iter().position(|&r| r == "-o") {
+            if let Some(iface) = parts.get(pos + 1) {
+                active_wans.push(iface.to_string());
+            }
+        }
+    }
+    (report.ip_forward_enabled && !active_wans.is_empty(), active_wans)
+}
+
+// --- 系统转发控制 ---
+
+pub fn start_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str, mask: &str) -> std::io::Result<()> {
     let mut commands = Vec::new();
     commands.push("echo 1 > /proc/sys/net/ipv4/ip_forward".to_string());
     commands.push(format!("ip addr flush dev {}", lan_if));
     commands.push(format!("ip addr add {}/{} dev {}", host_ip, mask, lan_if));
     commands.push(format!("ip link set {} up", lan_if));
-
     for wan_if in wan_ifs {
         commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE || true", wan_if));
         commands.push(format!("iptables -t nat -A POSTROUTING -o {} -j MASQUERADE", wan_if));
-        
         commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT || true", wan_if, lan_if));
         commands.push(format!("iptables -A FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT", wan_if, lan_if));
-        
         commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT || true", lan_if, wan_if));
         commands.push(format!("iptables -A FORWARD -i {} -o {} -j ACCEPT", lan_if, wan_if));
     }
@@ -58,6 +112,8 @@ pub fn stop_system_forwarding(wan_ifs: Vec<String>, lan_if: &str) -> std::io::Re
         commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT || true", wan_if, lan_if));
         commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT || true", lan_if, wan_if));
     }
+    // 彻底停止：关闭内核转发开关
+    commands.push("echo 0 > /proc/sys/net/ipv4/ip_forward".to_string());
     run_batch_as_root(commands)
 }
 
@@ -68,60 +124,104 @@ fn run_batch_as_root(commands: Vec<String>) -> std::io::Result<()> {
     if status.success() { Ok(()) } else { Err(std::io::Error::new(std::io::ErrorKind::Other, "Root failed")) }
 }
 
-// --- TCP/UDP 转发逻辑保持不变 ---
-pub async fn start_tcp_forward(src_addr: String, src_port: u16, dst_addr: String, dst_port: u16, mut stop_rx: watch::Receiver<bool>) -> Result<()> {
+// --- TCP 转发 ---
+
+pub async fn start_tcp_forward(
+    src_addr: String,
+    src_port: u16,
+    dst_addr: String,
+    dst_port: u16,
+    mut stop_rx: watch::Receiver<bool>,
+) -> Result<()> {
     let src_socket = format!("{}:{}", src_addr, src_port);
     let dst_socket = format!("{}:{}", dst_addr, dst_port);
     let listener = TcpListener::bind(&src_socket).await?;
+
     loop {
         tokio::select! {
             accept_res = listener.accept() => {
                 if let Ok((mut client, _)) = accept_res {
                     let d = dst_socket.clone();
+                    let mut stop_rx_clone = stop_rx.clone();
                     tokio::spawn(async move {
                         if let Ok(mut server) = TcpStream::connect(&d).await {
-                            let _ = copy_bidirectional(&mut client, &mut server).await;
+                            // 当 stop_rx 改变时，双向拷贝也会被强制终止（通过 select）
+                            tokio::select! {
+                                _ = copy_bidirectional(&mut client, &mut server) => {},
+                                _ = stop_rx_clone.changed() => {},
+                            }
                         }
                     });
                 }
             }
-            _ = stop_rx.changed() => { if *stop_rx.borrow() { break; } }
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
         }
     }
     Ok(())
 }
 
-pub async fn start_udp_forward(src_addr: String, src_port: u16, dst_addr: String, dst_port: u16, mut stop_rx: watch::Receiver<bool>) -> Result<()> {
+// --- UDP 转发 ---
+
+pub async fn start_udp_forward(
+    src_addr: String,
+    src_port: u16,
+    dst_addr: String,
+    dst_port: u16,
+    mut stop_rx: watch::Receiver<bool>,
+) -> Result<()> {
     let src_socket_addr = format!("{}:{}", src_addr, src_port);
     let dst_socket_addr = format!("{}:{}", dst_addr, dst_port);
     let socket = Arc::new(UdpSocket::bind(&src_socket_addr).await?);
+
     let clients: Arc<Mutex<HashMap<SocketAddr, (Arc<UdpSocket>, Instant)>>> = Arc::new(Mutex::new(HashMap::new()));
     let mut buf = [0u8; 4096];
+
     loop {
         tokio::select! {
             res = socket.recv_from(&mut buf) => {
                 if let Ok((len, addr)) = res {
                     let mut guard = clients.lock().await;
-                    let target = if let Some(c) = guard.get_mut(&addr) { c.1 = Instant::now(); c.0.clone() } else {
+                    let target = if let Some(c) = guard.get_mut(&addr) {
+                        c.1 = Instant::now();
+                        c.0.clone()
+                    } else {
                         let t = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
                         t.connect(&dst_socket_addr).await?;
+                        
                         let s_clone = socket.clone();
                         let t_clone = t.clone();
+                        let mut stop_rx_clone = stop_rx.clone();
+                        
                         tokio::spawn(async move {
                             let mut b = [0u8; 4096];
-                            while let Ok(n) = t_clone.recv(&mut b).await { let _ = s_clone.send_to(&b[..n], addr).await; }
+                            loop {
+                                tokio::select! {
+                                    n_res = t_clone.recv(&mut b) => {
+                                        if let Ok(n) = n_res {
+                                            let _ = s_clone.send_to(&b[..n], addr).await;
+                                        } else { break; }
+                                    }
+                                    _ = stop_rx_clone.changed() => { break; }
+                                }
+                            }
                         });
-                        guard.insert(addr, (t.clone(), Instant::now())); t
+                        guard.insert(addr, (t.clone(), Instant::now()));
+                        t
                     };
                     let _ = target.send(&buf[..len]).await;
                 }
             }
-            _ = stop_rx.changed() => { if *stop_rx.borrow() { break; } }
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
             _ = tokio::time::sleep(Duration::from_secs(30)) => {
                 let mut guard = clients.lock().await;
                 guard.retain(|_, (_, t)| t.elapsed() < Duration::from_secs(60));
             }
         }
     }
+    // 主循环退出，Arc 计数减少。子任务也会因为 stop_rx 信号而退出
     Ok(())
 }
