@@ -80,7 +80,11 @@ impl Language {
 
 pub fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
-    ForwarderApp::run(Settings::default())
+    ForwarderApp::run(Settings {
+        fonts: vec![include_bytes!("../assets/fonts/NotoSansSC-Regular.otf").as_slice().into()],
+        default_font: iced::Font::with_name("Noto Sans CJK SC"),
+        ..Settings::default()
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
