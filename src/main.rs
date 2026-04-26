@@ -95,6 +95,54 @@ impl Language {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct SidebarStyle;
+
+impl container::StyleSheet for SidebarStyle {
+    type Style = Theme;
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(iced::Background::Color(iced::Color::from_rgb(0.96, 0.96, 0.98))),
+            border: iced::Border {
+                width: 0.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct BadgeStyle;
+
+impl container::StyleSheet for BadgeStyle {
+    type Style = Theme;
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(iced::Background::Color(iced::Color::from_rgb(0.2, 0.5, 0.8))),
+            border: iced::Border {
+                radius: 10.0.into(),
+                ..Default::default()
+            },
+            text_color: Some(iced::Color::WHITE),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ContentStyle;
+
+impl container::StyleSheet for ContentStyle {
+    type Style = Theme;
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(iced::Background::Color(iced::Color::WHITE)),
+            ..Default::default()
+        }
+    }
+}
+
 pub fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
     ForwarderApp::run(Settings {
@@ -419,26 +467,58 @@ impl Application for ForwarderApp {
 
     fn view(&self) -> Element<Message> {
         let lang = self.language;
-        let nav = row![
-            button(lang.get("nav_share")).on_press(Message::SwitchPage(Page::SystemForward)).style(if self.current_page == Page::SystemForward { theme::Button::Primary } else { theme::Button::Secondary }),
-            button(lang.get("nav_forward")).on_press(Message::SwitchPage(Page::PortForward)).style(if self.current_page == Page::PortForward { theme::Button::Primary } else { theme::Button::Secondary }),
-            button(lang.get("nav_monitor")).on_press(Message::SwitchPage(Page::SystemMonitor)).style(if self.current_page == Page::SystemMonitor { theme::Button::Primary } else { theme::Button::Secondary }),
-            button(lang.get("nav_about")).on_press(Message::SwitchPage(Page::About)).style(if self.current_page == Page::About { theme::Button::Primary } else { theme::Button::Secondary }),
-            iced::widget::horizontal_space().width(Length::Fill),
-            button("中").on_press(Message::LanguageChanged(Language::Chinese)).style(if self.language == Language::Chinese { theme::Button::Primary } else { theme::Button::Secondary }),
-            button("EN").on_press(Message::LanguageChanged(Language::English)).style(if self.language == Language::English { theme::Button::Primary } else { theme::Button::Secondary }),
-        ].spacing(10).align_items(Alignment::Center);
 
-        let content: Element<Message> = match self.current_page {
+        // 侧边栏按钮样式
+        let sidebar_button = |label: &str, icon: &str, page: Page, current_page: Page| {
+            let is_selected = page == current_page;
+            button(
+                row![
+                    text(icon).size(16),
+                    text(label).size(14),
+                ]
+                .spacing(10)
+                .align_items(Alignment::Center)
+            )
+            .width(Length::Fill)
+            .padding(12)
+            .on_press(Message::SwitchPage(page))
+            .style(if is_selected { theme::Button::Primary } else { theme::Button::Text })
+        };
+
+        // 侧边栏
+        let sidebar = container(
+            column![
+                text("CONDUIT").size(24).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                vertical_space().height(30),
+                sidebar_button(lang.get("nav_share"), "🌐", Page::SystemForward, self.current_page),
+                sidebar_button(lang.get("nav_forward"), "🔌", Page::PortForward, self.current_page),
+                sidebar_button(lang.get("nav_monitor"), "📊", Page::SystemMonitor, self.current_page),
+                sidebar_button(lang.get("nav_about"), "ℹ️", Page::About, self.current_page),
+                vertical_space().height(Length::Fill),
+                row![
+                    button("中").on_press(Message::LanguageChanged(Language::Chinese)).style(if self.language == Language::Chinese { theme::Button::Primary } else { theme::Button::Secondary }).padding(5),
+                    button("EN").on_press(Message::LanguageChanged(Language::English)).style(if self.language == Language::English { theme::Button::Primary } else { theme::Button::Secondary }).padding(5),
+                ].spacing(5).align_items(Alignment::Center)
+            ]
+            .spacing(10)
+            .padding(20)
+        )
+        .width(200)
+        .height(Length::Fill)
+        .style(theme::Container::Custom(Box::new(SidebarStyle)));
+
+        let content_area: Element<Message> = match self.current_page {
             Page::About => {
                 container(
                     column![
-                        text("Conduit").size(40),
-                        text("Version 0.2.0").size(18),
+                        container(text("🚀").size(60)).padding(10),
+                        text("Conduit").size(40).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                        text(format!("v0.2.0")).size(14).style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))),
                         vertical_space().height(20),
                         text(lang.get("about_desc")).size(16),
+                        vertical_space().height(30),
                         text("GitHub: github.com/xjimlinx/Conduit").size(12),
-                        text("Built with Iced & Tokio").size(12),
+                        text("Built with Iced & Tokio").size(12).style(theme::Text::Color(iced::Color::from_rgb(0.6, 0.6, 0.6))),
                     ]
                     .spacing(10)
                     .align_items(Alignment::Center)
@@ -520,40 +600,78 @@ impl Application for ForwarderApp {
                     col.push(checkbox(iface, self.selected_wans.contains(iface)).on_toggle(move |a| Message::WanToggled(iface.clone(), a)))
                 });
 
-                column![
-                    text(lang.get("title_share")).size(25),
-                    text(lang.get("label_wan")).size(16),
-                    scrollable(wan_list).height(100),
-                    row![text(lang.get("label_lan")).width(100), pick_list(&self.interfaces[..], self.lan_interface.clone(), Message::LanSelected).width(Length::Fill)].spacing(10).align_items(Alignment::Center),
-                    row![text(lang.get("label_lan_ip")).width(100), text_input("192.168.10.1", &self.host_ip).on_input(Message::HostIpChanged), text("/"), text_input("24", &self.subnet_mask).on_input(Message::SubnetMaskChanged).width(40)].spacing(10).align_items(Alignment::Center),
+                container(column![
+                    text(lang.get("title_share")).size(28),
+                    vertical_space().height(10),
+                    container(column![
+                        text(lang.get("label_wan")).size(16).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                        scrollable(wan_list).height(120),
+                    ].spacing(10)).padding(15).style(theme::Container::Box),
+                    
+                    container(column![
+                        row![text(lang.get("label_lan")).width(120), pick_list(&self.interfaces[..], self.lan_interface.clone(), Message::LanSelected).width(Length::Fill)].spacing(10).align_items(Alignment::Center),
+                        row![text(lang.get("label_lan_ip")).width(120), text_input("192.168.10.1", &self.host_ip).on_input(Message::HostIpChanged), text("/"), text_input("24", &self.subnet_mask).on_input(Message::SubnetMaskChanged).width(50)].spacing(10).align_items(Alignment::Center),
+                    ].spacing(15)).padding(15).style(theme::Container::Box),
+
                     row![
-                        button(if self.sys_active { lang.get("btn_stop_share") } else { lang.get("btn_start_share") }).on_press(Message::ToggleSysForwarding).width(Length::Fill).style(if self.sys_active { theme::Button::Destructive } else { theme::Button::Primary }),
-                        button(lang.get("btn_detect")).on_press(Message::DetectSystemForward),
+                        button(if self.sys_active { lang.get("btn_stop_share") } else { lang.get("btn_start_share") }).on_press(Message::ToggleSysForwarding).width(Length::Fill).padding(12).style(if self.sys_active { theme::Button::Destructive } else { theme::Button::Primary }),
+                        button(lang.get("btn_detect")).on_press(Message::DetectSystemForward).padding(12),
                     ].spacing(10),
-                    text(&self.sys_status),
-                    button(lang.get("btn_refresh_iface")).on_press(Message::RefreshInterfaces),
-                ].spacing(15).max_width(500).into()
+                    
+                    container(row![
+                        text("🔔").size(14),
+                        text(&self.sys_status).size(13),
+                    ].spacing(10).align_items(Alignment::Center)).padding(10).style(theme::Container::Box),
+                    
+                    button(lang.get("btn_refresh_iface")).on_press(Message::RefreshInterfaces).style(theme::Button::Secondary),
+                ].spacing(20).max_width(600))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
             }
             Page::PortForward => {
-                let list = self.port_forwarders.iter().fold(column![].spacing(10), |col, f| {
+                let list = self.port_forwarders.iter().fold(column![].spacing(15), |col, f| {
                     col.push(container(column![
-                        row![pick_list(&Protocol::ALL[..], Some(f.protocol), move |p| Message::ProtocolChanged(f.id, p)).width(80), text_input("Src IP", &f.src_addr).on_input(move |v| Message::SrcAddrChanged(f.id, v)).width(Length::Fill), text(":"), text_input("Port", &f.src_port).on_input(move |v| Message::SrcPortChanged(f.id, v)).width(60), text("->"), text_input("Dst IP", &f.dst_addr).on_input(move |v| Message::DstAddrChanged(f.id, v)).width(Length::Fill), text(":"), text_input("Port", &f.dst_port).on_input(move |v| Message::DstPortChanged(f.id, v)).width(60)].spacing(5).align_items(Alignment::Center),
-                        row![text(&f.status).size(12).width(Length::Fill), button(if f.is_active { "Stop" } else { "Start" }).on_press(Message::TogglePortForwarding(f.id)).style(if f.is_active { theme::Button::Destructive } else { theme::Button::Primary }), button("Delete").on_press(Message::RemoveForwarder(f.id)).style(theme::Button::Secondary)].spacing(10).align_items(Alignment::Center)
-                    ].padding(10)).style(theme::Container::Box))
+                        row![
+                            container(text(f.protocol.to_string()).size(12))
+                                .padding([2, 8])
+                                .style(theme::Container::Custom(Box::new(BadgeStyle))),
+                            text_input("Src IP", &f.src_addr).on_input(move |v| Message::SrcAddrChanged(f.id, v)).width(Length::Fill),
+                            text(":"),
+                            text_input("Port", &f.src_port).on_input(move |v| Message::SrcPortChanged(f.id, v)).width(70),
+                            text(" ➔ ").size(18),
+                            text_input("Dst IP", &f.dst_addr).on_input(move |v| Message::DstAddrChanged(f.id, v)).width(Length::Fill),
+                            text(":"),
+                            text_input("Port", &f.dst_port).on_input(move |v| Message::DstPortChanged(f.id, v)).width(70)
+                        ].spacing(10).align_items(Alignment::Center),
+                        row![
+                            text(format!("● {}", &f.status)).size(12).style(theme::Text::Color(if f.is_active { iced::Color::from_rgb(0.2, 0.7, 0.2) } else { iced::Color::from_rgb(0.6, 0.6, 0.6) })).width(Length::Fill),
+                            button(if f.is_active { "⏹ Stop" } else { "▶ Start" }).on_press(Message::TogglePortForwarding(f.id)).style(if f.is_active { theme::Button::Destructive } else { theme::Button::Primary }).padding([5, 15]),
+                            button("🗑").on_press(Message::RemoveForwarder(f.id)).style(theme::Button::Secondary).padding([5, 10])
+                        ].spacing(10).align_items(Alignment::Center)
+                    ].spacing(10).padding(15)).style(theme::Container::Box))
                 });
+
                 column![
                     row![
-                        text(lang.get("title_forward")).size(25), 
+                        text(lang.get("title_forward")).size(28), 
                         iced::widget::horizontal_space().width(Length::Fill), 
-                        button(lang.get("btn_add_new")).on_press(Message::AddForwarder),
-                        button(lang.get("btn_import")).on_press(Message::ImportConfig),
-                        button(lang.get("btn_export")).on_press(Message::ExportConfig),
+                        button(text(format!("➕ {}", lang.get("btn_add_new")))).on_press(Message::AddForwarder).style(theme::Button::Primary).padding(10),
+                        button(lang.get("btn_import")).on_press(Message::ImportConfig).padding(10),
+                        button(lang.get("btn_export")).on_press(Message::ExportConfig).padding(10),
                     ].spacing(10).align_items(Alignment::Center), 
                     scrollable(list).height(Length::Fill)
-                ].spacing(15).into()
+                ].spacing(20).into()
             }
         };
 
-        container(column![nav, vertical_space().height(20), content].padding(20)).width(Length::Fill).height(Length::Fill).center_x().into()
+        row![
+            sidebar,
+            container(content_area)
+                .padding(30)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(theme::Container::Custom(Box::new(ContentStyle)))
+        ].into()
     }
 }
