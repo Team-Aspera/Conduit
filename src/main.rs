@@ -9,6 +9,75 @@ use serde::{Serialize, Deserialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Language {
+    English,
+    Chinese,
+}
+
+impl Language {
+    fn get(&self, key: &str) -> &'static str {
+        match (self, key) {
+            (Language::Chinese, "nav_share") => "网络共享",
+            (Language::Chinese, "nav_forward") => "端口转发",
+            (Language::Chinese, "nav_monitor") => "系统监控",
+            (Language::Chinese, "nav_about") => "关于",
+            (Language::Chinese, "title_share") => "Conduit - 网络共享",
+            (Language::Chinese, "title_forward") => "Conduit - 端口转发",
+            (Language::Chinese, "title_monitor") => "系统网络概览",
+            (Language::Chinese, "label_wan") => "外网接口 (WANs):",
+            (Language::Chinese, "label_lan") => "目标接口 (LAN):",
+            (Language::Chinese, "label_lan_ip") => "局域网 IP:",
+            (Language::Chinese, "btn_start_share") => "开始共享",
+            (Language::Chinese, "btn_stop_share") => "停止共享",
+            (Language::Chinese, "btn_detect") => "检测状态",
+            (Language::Chinese, "btn_refresh_iface") => "刷新接口",
+            (Language::Chinese, "btn_refresh") => "刷新",
+            (Language::Chinese, "btn_add_new") => "添加新转发",
+            (Language::Chinese, "btn_import") => "导入",
+            (Language::Chinese, "btn_export") => "导出",
+            (Language::Chinese, "status_ready") => "就绪",
+            (Language::Chinese, "status_active") => "活跃 (已检测)",
+            (Language::Chinese, "label_ip_forward") => "IP 转发 (内核):",
+            (Language::Chinese, "label_enabled") => "已开启",
+            (Language::Chinese, "label_disabled") => "已关闭",
+            (Language::Chinese, "monitor_active_flows") => "Conduit 活跃转发流",
+            (Language::Chinese, "monitor_nat_rules") => "NAT 规则 (Masquerade)",
+            (Language::Chinese, "monitor_port_rules") => "端口转发规则 (DNAT/Redirect)",
+            (Language::Chinese, "monitor_listen_ports") => "活跃监听端口 (TCP/UDP)",
+            
+            (Language::English, "nav_share") => "Network Share",
+            (Language::English, "nav_forward") => "Port Forwarders",
+            (Language::English, "nav_monitor") => "System Monitor",
+            (Language::English, "nav_about") => "About",
+            (Language::English, "title_share") => "Conduit - Network Share",
+            (Language::English, "title_forward") => "Conduit - Port Forwarders",
+            (Language::English, "title_monitor") => "System Network Overview",
+            (Language::English, "label_wan") => "Sources (WANs):",
+            (Language::English, "label_lan") => "Target (LAN):",
+            (Language::English, "label_lan_ip") => "LAN IP:",
+            (Language::English, "btn_start_share") => "Start Share",
+            (Language::English, "btn_stop_share") => "Stop Share",
+            (Language::English, "btn_detect") => "Detect Status",
+            (Language::English, "btn_refresh_iface") => "Refresh Interfaces",
+            (Language::English, "btn_refresh") => "Refresh",
+            (Language::English, "btn_add_new") => "Add New",
+            (Language::English, "btn_import") => "Import",
+            (Language::English, "btn_export") => "Export",
+            (Language::English, "status_ready") => "Ready",
+            (Language::English, "status_active") => "Active (Detected)",
+            (Language::English, "label_ip_forward") => "IP Forwarding (Kernel):",
+            (Language::English, "label_enabled") => "ENABLED",
+            (Language::English, "label_disabled") => "DISABLED",
+            (Language::English, "monitor_active_flows") => "Conduit Active Forwarding Flows",
+            (Language::English, "monitor_nat_rules") => "NAT Rules (Masquerade)",
+            (Language::English, "monitor_port_rules") => "Port Forward Rules (DNAT/Redirect)",
+            (Language::English, "monitor_listen_ports") => "Active Listening Ports (TCP/UDP)",
+            _ => "Unknown",
+        }
+    }
+}
+
 pub fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
     ForwarderApp::run(Settings::default())
@@ -61,6 +130,7 @@ struct PortForwarder {
 
 struct ForwarderApp {
     current_page: Page,
+    language: Language,
     
     // 系统转发
     interfaces: Vec<String>,
@@ -106,6 +176,7 @@ enum Message {
     ConfigFileSelected(Option<PathBuf>),
     ExportConfig,
     ConfigFileToExportSelected(Option<PathBuf>),
+    LanguageChanged(Language),
 }
 
 impl Application for ForwarderApp {
@@ -133,6 +204,7 @@ impl Application for ForwarderApp {
         (
             Self {
                 current_page: Page::SystemForward,
+                language: Language::Chinese,
                 interfaces: ifaces,
                 selected_wans: active_wans,
                 lan_interface: None,
@@ -151,6 +223,7 @@ impl Application for ForwarderApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            Message::LanguageChanged(lang) => self.language = lang,
             Message::SwitchPage(page) => self.current_page = page,
             Message::RefreshInterfaces => {
                 self.interfaces = network::get_interfaces().into_iter().filter(|i| {
@@ -165,7 +238,8 @@ impl Application for ForwarderApp {
                 let (active, wans) = network::detect_system_forward_status();
                 self.sys_active = active;
                 self.selected_wans = wans;
-                self.sys_status = if active { "Active (Detected)".to_string() } else { "Inactive".to_string() };
+                let status_key = if active { "status_active" } else { "Inactive" };
+                self.sys_status = self.language.get(status_key).to_string();
             }
             Message::WanToggled(name, active) => {
                 if active { self.selected_wans.push(name); }
@@ -201,7 +275,7 @@ impl Application for ForwarderApp {
             Message::AddForwarder => {
                 self.port_forwarders.push(PortForwarder {
                     id: Uuid::new_v4(), protocol: Protocol::TCP, src_addr: "0.0.0.0".to_string(), src_port: "".to_string(),
-                    dst_addr: "127.0.0.1".to_string(), dst_port: "".to_string(), is_active: false, status: "Ready".to_string(), stop_tx: None,
+                    dst_addr: "127.0.0.1".to_string(), dst_port: "".to_string(), is_active: false, status: self.language.get("status_ready").to_string(), stop_tx: None,
                 });
             }
             Message::RemoveForwarder(id) => {
@@ -256,7 +330,7 @@ impl Application for ForwarderApp {
                                     dst_addr: cfg.dst_addr,
                                     dst_port: cfg.dst_port,
                                     is_active: false,
-                                    status: "Ready (Imported)".to_string(),
+                                    status: format!("{} (Imported)", self.language.get("status_ready")),
                                     stop_tx: None,
                                 });
                             }
@@ -293,12 +367,16 @@ impl Application for ForwarderApp {
     }
 
     fn view(&self) -> Element<Message> {
+        let lang = self.language;
         let nav = row![
-            button("Network Share").on_press(Message::SwitchPage(Page::SystemForward)).style(if self.current_page == Page::SystemForward { theme::Button::Primary } else { theme::Button::Secondary }),
-            button("Port Forwarders").on_press(Message::SwitchPage(Page::PortForward)).style(if self.current_page == Page::PortForward { theme::Button::Primary } else { theme::Button::Secondary }),
-            button("System Monitor").on_press(Message::SwitchPage(Page::SystemMonitor)).style(if self.current_page == Page::SystemMonitor { theme::Button::Primary } else { theme::Button::Secondary }),
-            button("About").on_press(Message::SwitchPage(Page::About)).style(if self.current_page == Page::About { theme::Button::Primary } else { theme::Button::Secondary }),
-        ].spacing(10);
+            button(lang.get("nav_share")).on_press(Message::SwitchPage(Page::SystemForward)).style(if self.current_page == Page::SystemForward { theme::Button::Primary } else { theme::Button::Secondary }),
+            button(lang.get("nav_forward")).on_press(Message::SwitchPage(Page::PortForward)).style(if self.current_page == Page::PortForward { theme::Button::Primary } else { theme::Button::Secondary }),
+            button(lang.get("nav_monitor")).on_press(Message::SwitchPage(Page::SystemMonitor)).style(if self.current_page == Page::SystemMonitor { theme::Button::Primary } else { theme::Button::Secondary }),
+            button(lang.get("nav_about")).on_press(Message::SwitchPage(Page::About)).style(if self.current_page == Page::About { theme::Button::Primary } else { theme::Button::Secondary }),
+            iced::widget::horizontal_space().width(Length::Fill),
+            button("中").on_press(Message::LanguageChanged(Language::Chinese)).style(if self.language == Language::Chinese { theme::Button::Primary } else { theme::Button::Secondary }),
+            button("EN").on_press(Message::LanguageChanged(Language::English)).style(if self.language == Language::English { theme::Button::Primary } else { theme::Button::Secondary }),
+        ].spacing(10).align_items(Alignment::Center);
 
         let content: Element<Message> = match self.current_page {
             Page::About => {
@@ -329,25 +407,25 @@ impl Application for ForwarderApp {
 
                     column![
                         row![
-                            text("System Network Overview").size(25),
+                            text(lang.get("title_monitor")).size(25),
                             iced::widget::horizontal_space().width(Length::Fill),
-                            button("Refresh").on_press(Message::RefreshSystemReport),
+                            button(lang.get("btn_refresh")).on_press(Message::RefreshSystemReport),
                         ].align_items(Alignment::Center),
                         
                         row![
-                            text("IP Forwarding (Kernel): "),
-                            text(if report.ip_forward_enabled { "ENABLED" } else { "DISABLED" })
+                            text(lang.get("label_ip_forward")),
+                            text(if report.ip_forward_enabled { lang.get("label_enabled") } else { lang.get("label_disabled") })
                                 .style(theme::Text::Color(if report.ip_forward_enabled { iced::Color::from_rgb(0.0, 0.7, 0.0) } else { iced::Color::from_rgb(0.7, 0.0, 0.0) }))
                         ].spacing(10),
 
                         scrollable(column![
-                            section("Conduit Active Forwarding Flows", &report.active_connections),
+                            section(lang.get("monitor_active_flows"), &report.active_connections),
                             vertical_space().height(10),
-                            section("NAT Rules (Masquerade)", &report.nat_masquerade),
+                            section(lang.get("monitor_nat_rules"), &report.nat_masquerade),
                             vertical_space().height(10),
-                            section("Port Forward Rules (DNAT/Redirect)", &report.port_forwards),
+                            section(lang.get("monitor_port_rules"), &report.port_forwards),
                             vertical_space().height(10),
-                            section("Active Listening Ports (TCP/UDP)", &report.listening_ports),
+                            section(lang.get("monitor_listen_ports"), &report.listening_ports),
                         ].spacing(15)).height(Length::Fill),
                     ].spacing(15).into()
                 } else {
@@ -360,17 +438,17 @@ impl Application for ForwarderApp {
                 });
 
                 column![
-                    text("Conduit - Network Share").size(25),
-                    text("Sources (WANs):").size(16),
+                    text(lang.get("title_share")).size(25),
+                    text(lang.get("label_wan")).size(16),
                     scrollable(wan_list).height(100),
-                    row![text("Target (LAN): ").width(100), pick_list(&self.interfaces[..], self.lan_interface.clone(), Message::LanSelected).width(Length::Fill)].spacing(10).align_items(Alignment::Center),
-                    row![text("LAN IP: ").width(100), text_input("192.168.10.1", &self.host_ip).on_input(Message::HostIpChanged), text("/"), text_input("24", &self.subnet_mask).on_input(Message::SubnetMaskChanged).width(40)].spacing(10).align_items(Alignment::Center),
+                    row![text(lang.get("label_lan")).width(100), pick_list(&self.interfaces[..], self.lan_interface.clone(), Message::LanSelected).width(Length::Fill)].spacing(10).align_items(Alignment::Center),
+                    row![text(lang.get("label_lan_ip")).width(100), text_input("192.168.10.1", &self.host_ip).on_input(Message::HostIpChanged), text("/"), text_input("24", &self.subnet_mask).on_input(Message::SubnetMaskChanged).width(40)].spacing(10).align_items(Alignment::Center),
                     row![
-                        button(if self.sys_active { "Stop Share" } else { "Start Share" }).on_press(Message::ToggleSysForwarding).width(Length::Fill).style(if self.sys_active { theme::Button::Destructive } else { theme::Button::Primary }),
-                        button("Detect Status").on_press(Message::DetectSystemForward),
+                        button(if self.sys_active { lang.get("btn_stop_share") } else { lang.get("btn_start_share") }).on_press(Message::ToggleSysForwarding).width(Length::Fill).style(if self.sys_active { theme::Button::Destructive } else { theme::Button::Primary }),
+                        button(lang.get("btn_detect")).on_press(Message::DetectSystemForward),
                     ].spacing(10),
                     text(&self.sys_status),
-                    button("Refresh Interfaces").on_press(Message::RefreshInterfaces),
+                    button(lang.get("btn_refresh_iface")).on_press(Message::RefreshInterfaces),
                 ].spacing(15).max_width(500).into()
             }
             Page::PortForward => {
@@ -382,11 +460,11 @@ impl Application for ForwarderApp {
                 });
                 column![
                     row![
-                        text("Conduit - Port Forwarders").size(25), 
+                        text(lang.get("title_forward")).size(25), 
                         iced::widget::horizontal_space().width(Length::Fill), 
-                        button("Add New").on_press(Message::AddForwarder),
-                        button("Import").on_press(Message::ImportConfig),
-                        button("Export").on_press(Message::ExportConfig),
+                        button(lang.get("btn_add_new")).on_press(Message::AddForwarder),
+                        button(lang.get("btn_import")).on_press(Message::ImportConfig),
+                        button(lang.get("btn_export")).on_press(Message::ExportConfig),
                     ].spacing(10).align_items(Alignment::Center), 
                     scrollable(list).height(Length::Fill)
                 ].spacing(15).into()
