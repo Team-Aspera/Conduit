@@ -241,8 +241,11 @@ impl Application for ForwarderApp {
             Message::DetectSystemForward => {
                 let (active, wans) = network::detect_system_forward_status();
                 self.sys_active = active;
-                self.selected_wans = wans;
-                let status_key = if active { "status_active" } else { "Inactive" };
+                // 只有在检测到活跃转发时才更新选择的网卡列表，避免误清空用户之前的选择
+                if active && !wans.is_empty() {
+                    self.selected_wans = wans;
+                }
+                let status_key = if active { "status_active" } else { "status_ready" };
                 self.sys_status = self.language.get(status_key).to_string();
             }
             Message::WanToggled(name, active) => {

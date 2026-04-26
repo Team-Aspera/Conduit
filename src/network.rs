@@ -43,28 +43,34 @@ pub fn get_system_network_report() -> SystemReport {
         .unwrap_or_default().trim() == "1";
 
     if let Ok(output) = Command::new("iptables").args(["-t", "nat", "-S"]).output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            if line.contains("MASQUERADE") {
-                report.nat_masquerade.push(line.to_string());
-            } else if line.contains("DNAT") || line.contains("REDIRECT") {
-                report.port_forwards.push(line.to_string());
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.contains("MASQUERADE") {
+                    report.nat_masquerade.push(line.to_string());
+                } else if line.contains("DNAT") || line.contains("REDIRECT") {
+                    report.port_forwards.push(line.to_string());
+                }
             }
         }
     }
 
     if let Ok(output) = Command::new("ss").args(["-tlnpu"]).output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines().skip(1) {
-            report.listening_ports.push(line.to_string());
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines().skip(1) {
+                report.listening_ports.push(line.to_string());
+            }
         }
     }
 
     if let Ok(output) = Command::new("ss").args(["-apn"]).output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            if line.contains("conduit") && (line.contains("ESTAB") || line.contains("LISTEN") || line.contains("UNCONN")) {
-                report.active_connections.push(line.to_string());
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.contains("conduit") && (line.contains("ESTAB") || line.contains("LISTEN") || line.contains("UNCONN")) {
+                    report.active_connections.push(line.to_string());
+                }
             }
         }
     }
@@ -91,8 +97,8 @@ pub fn detect_system_forward_status() -> (bool, Vec<String>) {
 pub fn start_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str, mask: &str) -> std::io::Result<()> {
     let mut commands = Vec::new();
     commands.push("echo 1 > /proc/sys/net/ipv4/ip_forward".to_string());
-    commands.push(format!("ip addr flush dev {}", lan_if));
-    commands.push(format!("ip addr add {}/{} dev {}", host_ip, mask, lan_if));
+    // 移除了 flush，改为尝试添加地址并忽略已存在的错误，减少对现有连接的干扰
+    commands.push(format!("ip addr add {}/{} dev {} 2>/dev/null || true", host_ip, mask, lan_if));
     commands.push(format!("ip link set {} up", lan_if));
     for wan_if in wan_ifs {
         commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE || true", wan_if));
