@@ -108,11 +108,11 @@ pub fn start_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str
     commands.push(format!("ip addr add {}/{} dev {} 2>/dev/null || true", host_ip, mask, lan_if));
     commands.push(format!("ip link set {} up", lan_if));
     for wan_if in wan_ifs {
-        commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE || true", wan_if));
+        commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true", wan_if));
         commands.push(format!("iptables -t nat -A POSTROUTING -o {} -j MASQUERADE", wan_if));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT || true", wan_if, lan_if));
+        commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
         commands.push(format!("iptables -A FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT", wan_if, lan_if));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT || true", lan_if, wan_if));
+        commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true", lan_if, wan_if));
         commands.push(format!("iptables -A FORWARD -i {} -o {} -j ACCEPT", lan_if, wan_if));
     }
     run_batch_as_root(commands)
@@ -121,9 +121,9 @@ pub fn start_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str
 pub fn stop_system_forwarding(wan_ifs: Vec<String>, lan_if: &str) -> std::io::Result<()> {
     let mut commands = Vec::new();
     for wan_if in wan_ifs {
-        commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE || true", wan_if));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT || true", wan_if, lan_if));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT || true", lan_if, wan_if));
+        commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true", wan_if));
+        commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
+        commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true", lan_if, wan_if));
     }
     // 彻底停止：关闭内核转发开关
     commands.push("echo 0 > /proc/sys/net/ipv4/ip_forward".to_string());
