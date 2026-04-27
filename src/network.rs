@@ -116,13 +116,15 @@ pub fn start_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str
     run_batch_as_root(commands)
 }
 
-pub fn stop_system_forwarding(wan_ifs: Vec<String>, lan_if: &str) -> std::io::Result<()> {
+pub fn stop_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str, mask: &str) -> std::io::Result<()> {
     let mut commands = Vec::new();
     for wan_if in wan_ifs {
         commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true", wan_if));
         commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
         commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true", lan_if, wan_if));
     }
+    // 移除共享时分配的 IP 地址
+    commands.push(format!("ip addr del {}/{} dev {} 2>/dev/null || true", host_ip, mask, lan_if));
     commands.push("echo 0 > /proc/sys/net/ipv4/ip_forward".to_string());
     run_batch_as_root(commands)
 }

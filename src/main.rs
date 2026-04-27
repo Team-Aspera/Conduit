@@ -314,9 +314,11 @@ impl Application for ForwarderApp {
                 if self.sys_active {
                     let wans = self.selected_wans.clone();
                     let lan = self.lan_interface.clone();
+                    let host_ip = self.host_ip.clone();
+                    let mask = self.subnet_mask.clone();
                     if let Some(l) = lan {
                         return Command::perform(async move {
-                            let _ = network::stop_system_forwarding(wans, &l);
+                            let _ = network::stop_system_forwarding(wans, &l, &host_ip, &mask);
                         }, |_| Message::Exit);
                     }
                 }
@@ -379,9 +381,11 @@ impl Application for ForwarderApp {
                 if let Some(l) = lan {
                     if wans.is_empty() { self.sys_status = self.language.get("msg_select_wan").into(); return Command::none(); }
                     self.sys_status = if active { self.language.get("msg_stopping").into() } else { self.language.get("msg_starting").into() };
+                    let h = host_ip.clone();
+                    let m = mask.clone();
                     return Command::perform(async move {
-                        let res = if active { network::stop_system_forwarding(wans, &l) } 
-                                 else { network::start_system_forwarding(wans, &l, &host_ip, &mask) };
+                        let res = if active { network::stop_system_forwarding(wans, &l, &h, &m) } 
+                                 else { network::start_system_forwarding(wans, &l, &h, &m) };
                         res.map_err(|e| e.to_string())
                     }, move |res| Message::SysForwardingResult(!active, res));
                 } else { self.sys_status = self.language.get("msg_select_lan").into(); }
