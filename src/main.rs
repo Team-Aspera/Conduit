@@ -55,6 +55,8 @@ impl Language {
             (Language::Chinese, "msg_stopped") => "已停止",
             (Language::Chinese, "msg_active_bang") => "活跃!",
             (Language::Chinese, "about_desc") => "一个简单易用的网络工具，让开发板联网和端口转发变得更轻松。",
+            (Language::Chinese, "label_current_share") => "当前共享信息",
+            (Language::Chinese, "label_active_iface") => "活跃接口",
             
             (Language::English, "nav_share") => "Network Share",
             (Language::English, "nav_forward") => "Port Forwarders",
@@ -91,6 +93,8 @@ impl Language {
             (Language::English, "msg_stopped") => "Stopped",
             (Language::English, "msg_active_bang") => "Active!",
             (Language::English, "about_desc") => "A simple and easy-to-use network utility that makes dev-board networking and port forwarding a breeze.",
+            (Language::English, "label_current_share") => "Current Share Info",
+            (Language::English, "label_active_iface") => "Active Interface",
             _ => "Unknown",
         }
     }
@@ -659,6 +663,27 @@ impl Application for ForwarderApp {
                         button(if self.sys_active { lang.get("btn_stop_share") } else { lang.get("btn_start_share") }).on_press(Message::ToggleSysForwarding).width(Length::Fill).padding(12).style(if self.sys_active { theme::Button::Destructive } else { theme::Button::Primary }),
                         button(lang.get("btn_detect")).on_press(Message::DetectSystemForward).padding(12),
                     ].spacing(10),
+
+                    if self.sys_active {
+                        let info: Element<Message> = container(column![
+                            text(lang.get("label_current_share")).size(16).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                            row![
+                                text(format!("{}: ", lang.get("label_active_iface"))).size(14),
+                                container(text(self.lan_interface.clone().unwrap_or_default()).size(12))
+                                    .padding([2, 8])
+                                    .style(theme::Container::Custom(Box::new(BadgeStyle))),
+                                iced::widget::horizontal_space().width(20),
+                                text(format!("{}: ", lang.get("label_lan_ip"))).size(14),
+                                text(&self.host_ip).size(14).font(iced::Font::MONOSPACE).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.6, 0.2))),
+                            ].align_items(Alignment::Center)
+                        ].spacing(10))
+                        .padding(15)
+                        .style(theme::Container::Box)
+                        .into();
+                        info
+                    } else {
+                        iced::widget::vertical_space().height(0).into()
+                    },
                     
                     container(row![
                         text("🔔").size(14).shaping(iced::widget::text::Shaping::Advanced),
