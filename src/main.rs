@@ -17,6 +17,12 @@ enum Language {
     Chinese,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum CloseBehavior {
+    Minimize,
+    Quit,
+}
+
 impl Language {
     fn get(&self, key: &str) -> &'static str {
         match (self, key) {
@@ -24,9 +30,11 @@ impl Language {
             (Language::Chinese, "nav_forward") => "端口转发",
             (Language::Chinese, "nav_monitor") => "系统监控",
             (Language::Chinese, "nav_about") => "关于",
+            (Language::Chinese, "nav_settings") => "设置",
             (Language::Chinese, "title_share") => "Conduit - 网络共享",
             (Language::Chinese, "title_forward") => "Conduit - 端口转发",
             (Language::Chinese, "title_monitor") => "系统网络概览",
+            (Language::Chinese, "title_settings") => "应用设置",
             (Language::Chinese, "label_wan") => "外网接口 (WANs):",
             (Language::Chinese, "label_lan") => "目标接口 (LAN):",
             (Language::Chinese, "label_lan_ip") => "局域网 IP:",
@@ -61,14 +69,19 @@ impl Language {
             (Language::Chinese, "status_invalid_port") => "无效端口",
             (Language::Chinese, "status_stopped") => "已停止",
             (Language::Chinese, "status_imported") => "已导入",
+            (Language::Chinese, "label_close_behavior") => "关闭窗口行为",
+            (Language::Chinese, "opt_minimize") => "最小化到任务栏",
+            (Language::Chinese, "opt_quit") => "直接退出程序 (清理规则)",
             
             (Language::English, "nav_share") => "Network Share",
             (Language::English, "nav_forward") => "Port Forwarders",
             (Language::English, "nav_monitor") => "System Monitor",
             (Language::English, "nav_about") => "About",
+            (Language::English, "nav_settings") => "Settings",
             (Language::English, "title_share") => "Conduit - Network Share",
             (Language::English, "title_forward") => "Conduit - Port Forwarders",
             (Language::English, "title_monitor") => "System Network Overview",
+            (Language::English, "title_settings") => "Settings",
             (Language::English, "label_wan") => "Sources (WANs):",
             (Language::English, "label_lan") => "Target (LAN):",
             (Language::English, "label_lan_ip") => "LAN IP:",
@@ -103,6 +116,9 @@ impl Language {
             (Language::English, "status_invalid_port") => "Invalid port",
             (Language::English, "status_stopped") => "Stopped",
             (Language::English, "status_imported") => "Imported",
+            (Language::English, "label_close_behavior") => "On Window Close",
+            (Language::English, "opt_minimize") => "Minimize to taskbar",
+            (Language::English, "opt_quit") => "Quit application (Cleanup rules)",
             _ => "Unknown",
         }
     }
@@ -171,6 +187,7 @@ enum Page {
     PortForward,
     SystemMonitor,
     About,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -213,6 +230,7 @@ struct PortForwarder {
 struct ForwarderApp {
     current_page: Page,
     language: Language,
+    close_behavior: CloseBehavior,
     
     // 资源缓存
     logo_only: Handle,
@@ -238,6 +256,7 @@ struct ForwarderApp {
 #[derive(Debug, Clone)]
 enum Message {
     SwitchPage(Page),
+    SetCloseBehavior(CloseBehavior),
     // 系统转发
     WanToggled(String, bool),
     LanSelected(String),
@@ -300,6 +319,7 @@ impl Application for ForwarderApp {
             Self {
                 current_page: Page::SystemForward,
                 language: default_lang,
+                close_behavior: CloseBehavior::Quit,
                 logo_only,
                 logo_full,
                 interfaces: ifaces,
@@ -323,6 +343,9 @@ impl Application for ForwarderApp {
         match message {
             Message::Exit => return iced::window::close(iced::window::Id::MAIN),
             Message::EventOccurred(iced::Event::Window(_, iced::window::Event::CloseRequested)) => {
+                if self.close_behavior == CloseBehavior::Minimize {
+                    return iced::window::minimize(iced::window::Id::MAIN, true);
+                }
                 if self.sys_active {
                     let wans = self.selected_wans.clone();
                     let lan = self.lan_interface.clone();
@@ -337,6 +360,7 @@ impl Application for ForwarderApp {
                 return iced::window::close(iced::window::Id::MAIN);
             }
             Message::EventOccurred(_) => {}
+            Message::SetCloseBehavior(behavior) => self.close_behavior = behavior,
             Message::LanguageChanged(lang) => {
                 self.language = lang;
                 // 刷新系统状态文字
@@ -562,6 +586,7 @@ impl Application for ForwarderApp {
                 sidebar_button(lang.get("nav_share"), "🌐", Page::SystemForward, self.current_page),
                 sidebar_button(lang.get("nav_forward"), "🔌", Page::PortForward, self.current_page),
                 sidebar_button(lang.get("nav_monitor"), "📊", Page::SystemMonitor, self.current_page),
+                sidebar_button(lang.get("nav_settings"), "⚙️", Page::Settings, self.current_page),
                 sidebar_button(lang.get("nav_about"), "ℹ️", Page::About, self.current_page),
                 vertical_space().height(Length::Fill),
                 row![
@@ -577,6 +602,19 @@ impl Application for ForwarderApp {
         .style(theme::Container::Custom(Box::new(SidebarStyle)));
 
         let content_area: Element<Message> = match self.current_page {
+            Page::Settings => {
+                column![
+                    text(lang.get("title_settings")).size(28),
+                    vertical_space().height(20),
+                    container(column![
+                        text(lang.get("label_close_behavior")).size(16).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                        row![
+                            button(lang.get("opt_minimize")).on_press(Message::SetCloseBehavior(CloseBehavior::Minimize)).style(if self.close_behavior == CloseBehavior::Minimize { theme::Button::Primary } else { theme::Button::Secondary }).padding(10),
+                            button(lang.get("opt_quit")).on_press(Message::SetCloseBehavior(CloseBehavior::Quit)).style(if self.close_behavior == CloseBehavior::Quit { theme::Button::Primary } else { theme::Button::Secondary }).padding(10),
+                        ].spacing(10)
+                    ].spacing(15)).padding(20).style(theme::Container::Box),
+                ].spacing(20).max_width(600).into()
+            }
             Page::About => {
                 container(
                     column![
