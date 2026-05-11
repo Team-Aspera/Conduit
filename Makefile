@@ -6,7 +6,7 @@ ARCH     = $(if $(filter x86_64,$(UNAME_M)),amd64,$(UNAME_M))
 UNAME_S  = $(shell uname -s | tr A-Z a-z)
 DIST     = $(BINARY)-$(UNAME_S)-$(ARCH)
 
-.PHONY: all build dist install install-dist uninstall uninstall-dist clean test lint fmt
+.PHONY: all build dist install install-dist uninstall uninstall-dist clean test lint fmt ci
 
 all: build
 
@@ -49,3 +49,6 @@ lint:
 
 fmt:
 	cargo fmt
+
+ci:
+	bash scripts/ci-check.sh

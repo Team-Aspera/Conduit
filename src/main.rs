@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::LazyLock;
+use std::sync::Mutex;
 use tokio::sync::watch;
 use uuid::Uuid;
 
@@ -268,17 +270,42 @@ struct PortForwarder {
 }
 
 #[cfg(target_os = "linux")]
-struct ConduitTray {
-    tx: iced::futures::channel::mpsc::Sender<Message>,
-}
+struct ConduitTray;
 
 #[cfg(target_os = "linux")]
+#[cfg(target_os = "linux")]
+static TRAY_EVENTS: LazyLock<Mutex<Vec<Message>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
 impl ksni::Tray for ConduitTray {
     fn id(&self) -> String {
         "conduit".into()
     }
     fn icon_name(&self) -> String {
         "conduit".into()
+    }
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        let img = ::image::ImageReader::new(std::io::Cursor::new(include_bytes!(
+            "../assets/images/Conduit-logoonly.png"
+        )))
+        .with_guessed_format()
+        .unwrap()
+        .decode()
+        .unwrap()
+        .into_rgba8();
+        let (w, h) = img.dimensions();
+        let mut data = img.into_vec();
+        for px in data.chunks_exact_mut(4) {
+            let (r, g, b, a) = (px[0], px[1], px[2], px[3]);
+            px[0] = a;
+            px[1] = r;
+            px[2] = g;
+            px[3] = b;
+        }
+        vec![ksni::Icon {
+            width: w as i32,
+            height: h as i32,
+            data,
+        }]
     }
     fn title(&self) -> String {
         "Conduit".into()
@@ -291,10 +318,7 @@ impl ksni::Tray for ConduitTray {
         }
     }
     fn activate(&mut self, _x: i32, _y: i32) {
-        let mut tx = self.tx.clone();
-        tokio::spawn(async move {
-            let _ = tx.send(Message::TrayClicked).await;
-        });
+        TRAY_EVENTS.lock().unwrap().push(Message::TrayClicked);
     }
 }
 
@@ -315,6 +339,7 @@ struct AppConfig {
     language: Language,
     close_behavior: CloseBehavior,
     forwarders: Vec<PortForwarderConfig>,
+    lan_shares: Vec<LanShareConfig>,
 }
 
 impl AppConfig {
@@ -341,6 +366,24 @@ impl Default for AppConfig {
             language: Language::Chinese,
             close_behavior: CloseBehavior::Quit,
             forwarders: vec![],
+            lan_shares: vec![LanShareConfig::default()],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LanShareConfig {
+    interface: String,
+    ip: String,
+    mask: String,
+}
+
+impl Default for LanShareConfig {
+    fn default() -> Self {
+        Self {
+            interface: String::new(),
+            ip: "192.168.10.1".into(),
+            mask: "24".into(),
         }
     }
 }
@@ -360,9 +403,7 @@ struct ForwarderApp {
     // 系统转发
     interfaces: Vec<String>,
     selected_wans: Vec<String>,
-    lan_interface: Option<String>,
-    host_ip: String,
-    subnet_mask: String,
+    lan_shares: Vec<LanShareConfig>,
     sys_active: bool,
     sys_status: Cow<'static, str>,
 
@@ -378,13 +419,13 @@ struct ForwarderApp {
 enum Message {
     SwitchPage(Page),
     SetCloseBehavior(CloseBehavior),
-    CloseRequested,
+    EventOccurred(iced::Event),
     TrayClicked,
     // 系统转发
     WanToggled(String, bool),
-    LanSelected(String),
-    HostIpChanged(String),
-    SubnetMaskChanged(String),
+    AddLanShare,
+    RemoveLanShare(usize),
+    UpdateLanShare(usize, String, String),
     ToggleSysForwarding,
     SysForwardingResult(bool, Result<(), String>),
     DetectSystemForward,
@@ -459,13 +500,9 @@ impl Application for ForwarderApp {
             .collect();
 
         #[cfg(target_os = "linux")]
-        {
-            let (tx, _rx) = iced::futures::channel::mpsc::channel(100);
-            let tray = ConduitTray { tx };
-            tokio::spawn(async move {
-                let _ = tray.spawn().await;
-            });
-        }
+        tokio::spawn(async {
+            let _ = ConduitTray.spawn().await;
+        });
 
         let status_key = if sys_active {
             "status_active"
@@ -484,9 +521,7 @@ impl Application for ForwarderApp {
                 _tray_icon: None,
                 interfaces: ifaces,
                 selected_wans: active_wans,
-                lan_interface: None,
-                host_ip: "192.168.10.1".to_string(),
-                subnet_mask: "24".to_string(),
+                lan_shares: vec![LanShareConfig::default()],
                 sys_active,
                 sys_status: cfg.language.get(status_key).into(),
                 system_report: Some(report),
@@ -514,36 +549,29 @@ impl Application for ForwarderApp {
                     iced::window::Mode::Windowed,
                 );
             }
-            Message::CloseRequested => {
+            Message::EventOccurred(iced::Event::Window(_, iced::window::Event::CloseRequested)) => {
                 if self.close_behavior == CloseBehavior::Minimize {
                     tracing::info!("Minimizing to tray...");
-                    return Command::batch(vec![
-                        iced::window::change_mode(
-                            iced::window::Id::MAIN,
-                            iced::window::Mode::Hidden,
-                        ),
-                        iced::window::minimize(iced::window::Id::MAIN, true),
-                    ]);
+                    return iced::window::minimize(iced::window::Id::MAIN, true);
                 }
                 tracing::info!("Quitting application with cleanup...");
                 if self.sys_active {
                     let wans = self.selected_wans.clone();
-                    let lan = self.lan_interface.clone();
-                    let host_ip = self.host_ip.clone();
-                    let mask = self.subnet_mask.clone();
-                    if let Some(l) = lan {
-                        let h = host_ip.clone();
-                        let m = mask.clone();
-                        return Command::perform(
-                            async move {
-                                let _ = network::stop_system_forwarding(wans, &l, &h, &m);
-                            },
-                            |_| Message::Exit,
-                        );
-                    }
+                    let shares: Vec<_> = self
+                        .lan_shares
+                        .iter()
+                        .map(|s| (s.interface.clone(), s.ip.clone(), s.mask.clone()))
+                        .collect();
+                    return Command::perform(
+                        async move {
+                            let _ = network::stop_system_forwarding(&wans, &shares);
+                        },
+                        |_| Message::Exit,
+                    );
                 }
                 return iced::window::close(iced::window::Id::MAIN);
             }
+            Message::EventOccurred(_) => {}
             Message::SetCloseBehavior(behavior) => {
                 self.close_behavior = behavior;
                 self.save_config();
@@ -618,42 +646,60 @@ impl Application for ForwarderApp {
                     self.selected_wans.retain(|n| n != &name);
                 }
             }
-            Message::LanSelected(name) => self.lan_interface = Some(name),
-            Message::HostIpChanged(ip) => self.host_ip = ip,
-            Message::SubnetMaskChanged(mask) => self.subnet_mask = mask,
+            Message::AddLanShare => {
+                self.lan_shares.push(LanShareConfig::default());
+                self.save_config();
+            }
+            Message::RemoveLanShare(idx) => {
+                if idx < self.lan_shares.len() {
+                    self.lan_shares.remove(idx);
+                }
+                self.save_config();
+            }
+            Message::UpdateLanShare(idx, field, value) => {
+                if let Some(share) = self.lan_shares.get_mut(idx) {
+                    match field.as_str() {
+                        "interface" => share.interface = value,
+                        "ip" => share.ip = value,
+                        "mask" => share.mask = value,
+                        _ => {}
+                    }
+                }
+                self.save_config();
+            }
             Message::ToggleSysForwarding => {
                 let active = self.sys_active;
                 let wans = self.selected_wans.clone();
-                let lan = self.lan_interface.clone();
-                let host_ip = self.host_ip.clone();
-                let mask = self.subnet_mask.clone();
+                let shares: Vec<_> = self
+                    .lan_shares
+                    .iter()
+                    .map(|s| (s.interface.clone(), s.ip.clone(), s.mask.clone()))
+                    .collect();
 
-                if let Some(l) = lan {
-                    if wans.is_empty() {
-                        self.sys_status = self.language.get("msg_select_wan").into();
-                        return Command::none();
-                    }
-                    self.sys_status = if active {
-                        self.language.get("msg_stopping").into()
-                    } else {
-                        self.language.get("msg_starting").into()
-                    };
-                    let h = host_ip.clone();
-                    let m = mask.clone();
-                    return Command::perform(
-                        async move {
-                            let res = if active {
-                                network::stop_system_forwarding(wans, &l, &h, &m)
-                            } else {
-                                network::start_system_forwarding(wans, &l, &h, &m)
-                            };
-                            res.map_err(|e| e.to_string())
-                        },
-                        move |res| Message::SysForwardingResult(!active, res),
-                    );
-                } else {
+                if shares.is_empty() || shares.iter().any(|(i, _, _)| i.is_empty()) {
                     self.sys_status = self.language.get("msg_select_lan").into();
+                    return Command::none();
                 }
+                if wans.is_empty() {
+                    self.sys_status = self.language.get("msg_select_wan").into();
+                    return Command::none();
+                }
+                self.sys_status = if active {
+                    self.language.get("msg_stopping").into()
+                } else {
+                    self.language.get("msg_starting").into()
+                };
+                return Command::perform(
+                    async move {
+                        let res = if active {
+                            network::stop_system_forwarding(&wans, &shares)
+                        } else {
+                            network::start_system_forwarding(&wans, &shares)
+                        };
+                        res.map_err(|e| e.to_string())
+                    },
+                    move |res| Message::SysForwardingResult(!active, res),
+                );
             }
             Message::SysForwardingResult(target, res) => match res {
                 Ok(_) => {
@@ -852,26 +898,19 @@ impl Application for ForwarderApp {
 
     fn subscription(&self) -> iced::Subscription<Message> {
         let mut subs: Vec<iced::Subscription<Message>> =
-            vec![iced::event::listen_with(|event, _status| match event {
-                iced::Event::Window(_, iced::window::Event::CloseRequested) => {
-                    Some(Message::CloseRequested)
-                }
-                _ => None,
-            })];
+            vec![iced::event::listen().map(Message::EventOccurred)];
 
         #[cfg(target_os = "linux")]
         subs.push(iced::subscription::channel(
             std::any::TypeId::of::<ConduitTray>(),
             100,
             |mut output| async move {
-                // ksni 的点击事件会通过 activate 触发，我们在那里发送 TrayClicked
-                // 此处我们监听系统的底层事件作为补充 (可选)
-                let receiver = tray_icon::TrayIconEvent::receiver();
                 loop {
-                    if let Ok(_event) = receiver.try_recv() {
-                        let _ = output.send(Message::TrayClicked).await;
+                    let msg = { TRAY_EVENTS.lock().unwrap().pop() };
+                    if let Some(msg) = msg {
+                        let _ = output.send(msg).await;
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 }
             },
         ));
@@ -1168,13 +1207,84 @@ impl Application for ForwarderApp {
                 let wan_list = self
                     .interfaces
                     .iter()
-                    .filter(|iface| Some((*iface).clone()) != self.lan_interface)
                     .fold(column![].spacing(5), |col, iface| {
                         col.push(
                             checkbox(iface, self.selected_wans.contains(iface))
                                 .on_toggle(move |a| Message::WanToggled(iface.clone(), a)),
                         )
                     });
+
+                let lan_cards: Vec<Element<Message>> = self
+                    .lan_shares
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, share)| {
+                        container(
+                            column![
+                                row![
+                                    text(lang.get("label_lan")).width(80).size(14),
+                                    pick_list(
+                                        &self.interfaces[..],
+                                        if share.interface.is_empty() {
+                                            None
+                                        } else {
+                                            Some(share.interface.clone())
+                                        },
+                                        move |v| Message::UpdateLanShare(
+                                            idx,
+                                            "interface".into(),
+                                            v
+                                        ),
+                                    )
+                                    .width(Length::Fill),
+                                    button(
+                                        text("✕").shaping(iced::widget::text::Shaping::Advanced)
+                                    )
+                                    .on_press(Message::RemoveLanShare(idx))
+                                    .style(theme::Button::Destructive)
+                                    .padding([3, 8]),
+                                ]
+                                .spacing(10)
+                                .align_items(Alignment::Center),
+                                row![
+                                    text(format!("{} /", lang.get("label_lan_ip")))
+                                        .size(14)
+                                        .width(80),
+                                    text_input("192.168.10.1", &share.ip).on_input(move |v| {
+                                        Message::UpdateLanShare(idx, "ip".into(), v)
+                                    }),
+                                    text_input("24", &share.mask)
+                                        .on_input(move |v| Message::UpdateLanShare(
+                                            idx,
+                                            "mask".into(),
+                                            v
+                                        ))
+                                        .width(60),
+                                ]
+                                .spacing(10)
+                                .align_items(Alignment::Center),
+                            ]
+                            .spacing(10),
+                        )
+                        .padding(12)
+                        .style(theme::Container::Box)
+                        .into()
+                    })
+                    .collect();
+
+                let mut lan_col = column![].spacing(10);
+                for card in lan_cards {
+                    lan_col = lan_col.push(card);
+                }
+                lan_col = lan_col.push(
+                    button(
+                        text(format!("➕ {}", lang.get("btn_add_new")))
+                            .shaping(iced::widget::text::Shaping::Advanced),
+                    )
+                    .on_press(Message::AddLanShare)
+                    .style(theme::Button::Secondary)
+                    .padding(10),
+                );
 
                 container(
                     column![
@@ -1187,7 +1297,7 @@ impl Application for ForwarderApp {
                                     .style(theme::Text::Color(iced::Color::from_rgb(
                                         0.2, 0.4, 0.7
                                     ))),
-                                scrollable(wan_list).height(120),
+                                scrollable(wan_list).height(100),
                             ]
                             .spacing(10)
                         )
@@ -1195,30 +1305,14 @@ impl Application for ForwarderApp {
                         .style(theme::Container::Box),
                         container(
                             column![
-                                row![
-                                    text(lang.get("label_lan")).width(120),
-                                    pick_list(
-                                        &self.interfaces[..],
-                                        self.lan_interface.clone(),
-                                        Message::LanSelected
-                                    )
-                                    .width(Length::Fill)
-                                ]
-                                .spacing(10)
-                                .align_items(Alignment::Center),
-                                row![
-                                    text(lang.get("label_lan_ip")).width(120),
-                                    text_input("192.168.10.1", &self.host_ip)
-                                        .on_input(Message::HostIpChanged),
-                                    text("/"),
-                                    text_input("24", &self.subnet_mask)
-                                        .on_input(Message::SubnetMaskChanged)
-                                        .width(50)
-                                ]
-                                .spacing(10)
-                                .align_items(Alignment::Center),
+                                text(lang.get("label_lan"))
+                                    .size(16)
+                                    .style(theme::Text::Color(iced::Color::from_rgb(
+                                        0.2, 0.4, 0.7
+                                    ))),
+                                scrollable(lan_col).height(200),
                             ]
-                            .spacing(15)
+                            .spacing(10)
                         )
                         .padding(15)
                         .style(theme::Container::Box),
@@ -1242,30 +1336,36 @@ impl Application for ForwarderApp {
                         ]
                         .spacing(10),
                         if self.sys_active {
+                            let share_badges: Vec<Element<Message>> = self
+                                .lan_shares
+                                .iter()
+                                .map(|share| {
+                                    container(
+                                        row![
+                                            container(text(&share.interface).size(12))
+                                                .padding([2, 8])
+                                                .style(theme::Container::Custom(Box::new(
+                                                    BadgeStyle,
+                                                ))),
+                                            iced::widget::horizontal_space().width(10),
+                                            text(format!("{}/{}", share.ip, share.mask))
+                                                .size(13)
+                                                .font(iced::Font::MONOSPACE),
+                                        ]
+                                        .align_items(Alignment::Center),
+                                    )
+                                    .padding(8)
+                                    .style(theme::Container::Box)
+                                    .into()
+                                })
+                                .collect();
+                            let list: Element<Message> = column(share_badges).spacing(8).into();
                             let info: Element<Message> = container(
                                 column![
                                     text(lang.get("label_current_share")).size(16).style(
                                         theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))
                                     ),
-                                    row![
-                                        text(format!("{}: ", lang.get("label_active_iface")))
-                                            .size(14),
-                                        container(
-                                            text(self.lan_interface.clone().unwrap_or_default())
-                                                .size(12)
-                                        )
-                                        .padding([2, 8])
-                                        .style(theme::Container::Custom(Box::new(BadgeStyle))),
-                                        iced::widget::horizontal_space().width(20),
-                                        text(format!("{}: ", lang.get("label_lan_ip"))).size(14),
-                                        text(&self.host_ip)
-                                            .size(14)
-                                            .font(iced::Font::MONOSPACE)
-                                            .style(theme::Text::Color(iced::Color::from_rgb(
-                                                0.2, 0.6, 0.2
-                                            ))),
-                                    ]
-                                    .align_items(Alignment::Center)
+                                    list,
                                 ]
                                 .spacing(10),
                             )
@@ -1274,7 +1374,7 @@ impl Application for ForwarderApp {
                             .into();
                             info
                         } else {
-                            iced::widget::vertical_space().height(0).into()
+                            column![].into()
                         },
                         container(
                             row![
@@ -1427,6 +1527,7 @@ impl ForwarderApp {
                     dst_port: f.dst_port.clone(),
                 })
                 .collect(),
+            lan_shares: self.lan_shares.clone(),
         };
         cfg.save();
     }
@@ -1665,30 +1766,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_app_lan_selection() {
+    async fn test_app_lan_share_add_remove() {
         let (mut app, _) = ForwarderApp::new(());
-        assert!(app.lan_interface.is_none());
+        assert_eq!(app.lan_shares.len(), 1);
 
-        let _cmd = app.update(Message::LanSelected("eth1".into()));
-        assert_eq!(app.lan_interface, Some("eth1".into()));
+        let _cmd = app.update(Message::AddLanShare);
+        assert_eq!(app.lan_shares.len(), 2);
+
+        let _cmd = app.update(Message::RemoveLanShare(0));
+        assert_eq!(app.lan_shares.len(), 1);
     }
 
     #[tokio::test]
-    async fn test_app_host_ip_changed() {
+    async fn test_app_lan_share_update() {
         let (mut app, _) = ForwarderApp::new(());
-        assert_eq!(app.host_ip, "192.168.10.1");
+        let _cmd = app.update(Message::UpdateLanShare(
+            0,
+            "interface".into(),
+            "eth1".into(),
+        ));
+        assert_eq!(app.lan_shares[0].interface, "eth1");
 
-        let _cmd = app.update(Message::HostIpChanged("10.0.0.1".into()));
-        assert_eq!(app.host_ip, "10.0.0.1");
+        let _cmd = app.update(Message::UpdateLanShare(0, "ip".into(), "10.0.0.1".into()));
+        assert_eq!(app.lan_shares[0].ip, "10.0.0.1");
+
+        let _cmd = app.update(Message::UpdateLanShare(0, "mask".into(), "16".into()));
+        assert_eq!(app.lan_shares[0].mask, "16");
     }
 
     #[tokio::test]
-    async fn test_app_subnet_mask_changed() {
+    async fn test_app_lan_share_default_values() {
         let (mut app, _) = ForwarderApp::new(());
-        assert_eq!(app.subnet_mask, "24");
-
-        let _cmd = app.update(Message::SubnetMaskChanged("16".into()));
-        assert_eq!(app.subnet_mask, "16");
+        assert_eq!(app.lan_shares[0].ip, "192.168.10.1");
+        assert_eq!(app.lan_shares[0].mask, "24");
     }
 
     #[tokio::test]

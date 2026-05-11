@@ -107,67 +107,66 @@ pub fn detect_system_forward_status() -> (bool, Vec<String>, bool) {
 // --- 系统转发控制 ---
 
 pub fn start_system_forwarding(
-    wan_ifs: Vec<String>,
-    lan_if: &str,
-    host_ip: &str,
-    mask: &str,
+    wan_ifs: &[String],
+    lan_shares: &[(String, String, String)],
 ) -> std::io::Result<()> {
     let mut commands = Vec::new();
     commands.push("echo 1 > /proc/sys/net/ipv4/ip_forward".to_string());
-    commands.push(format!(
-        "ip addr add {}/{} dev {} 2>/dev/null || true",
-        host_ip, mask, lan_if
-    ));
-    commands.push(format!("ip link set {} up", lan_if));
-    for wan_if in wan_ifs {
+    for (lan_if, host_ip, mask) in lan_shares {
         commands.push(format!(
-            "iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true",
-            wan_if
+            "ip addr add {}/{} dev {} 2>/dev/null || true",
+            host_ip, mask, lan_if
         ));
-        commands.push(format!(
-            "iptables -t nat -A POSTROUTING -o {} -j MASQUERADE",
-            wan_if
-        ));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
-        commands.push(format!(
-            "iptables -A FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT",
-            wan_if, lan_if
-        ));
-        commands.push(format!(
-            "iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true",
-            lan_if, wan_if
-        ));
-        commands.push(format!(
-            "iptables -A FORWARD -i {} -o {} -j ACCEPT",
-            lan_if, wan_if
-        ));
+        commands.push(format!("ip link set {} up", lan_if));
+        for wan_if in wan_ifs {
+            commands.push(format!(
+                "iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true",
+                wan_if
+            ));
+            commands.push(format!(
+                "iptables -t nat -A POSTROUTING -o {} -j MASQUERADE",
+                wan_if
+            ));
+            commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
+            commands.push(format!(
+                "iptables -A FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT",
+                wan_if, lan_if
+            ));
+            commands.push(format!(
+                "iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true",
+                lan_if, wan_if
+            ));
+            commands.push(format!(
+                "iptables -A FORWARD -i {} -o {} -j ACCEPT",
+                lan_if, wan_if
+            ));
+        }
     }
     run_batch_as_root(commands)
 }
 
 pub fn stop_system_forwarding(
-    wan_ifs: Vec<String>,
-    lan_if: &str,
-    host_ip: &str,
-    mask: &str,
+    wan_ifs: &[String],
+    lan_shares: &[(String, String, String)],
 ) -> std::io::Result<()> {
     let mut commands = Vec::new();
-    for wan_if in wan_ifs {
+    for (lan_if, host_ip, mask) in lan_shares {
+        for wan_if in wan_ifs {
+            commands.push(format!(
+                "iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true",
+                wan_if
+            ));
+            commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
+            commands.push(format!(
+                "iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true",
+                lan_if, wan_if
+            ));
+        }
         commands.push(format!(
-            "iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true",
-            wan_if
-        ));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
-        commands.push(format!(
-            "iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true",
-            lan_if, wan_if
+            "ip addr del {}/{} dev {} 2>/dev/null || true",
+            host_ip, mask, lan_if
         ));
     }
-    // 移除共享时分配的 IP 地址
-    commands.push(format!(
-        "ip addr del {}/{} dev {} 2>/dev/null || true",
-        host_ip, mask, lan_if
-    ));
     commands.push("echo 0 > /proc/sys/net/ipv4/ip_forward".to_string());
     run_batch_as_root(commands)
 }
