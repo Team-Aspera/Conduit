@@ -816,6 +816,7 @@ name = "conduit"
 version = "0.2.3"
 dependencies = [
  "anyhow",
+ "dirs",
  "iced",
  "image 0.25.9",
  "ksni",

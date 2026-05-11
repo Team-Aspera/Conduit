@@ -275,7 +275,17 @@ impl ksni::Tray for ConduitTray {
     }
 }
 
-const CONFIG_PATH: &str = "config.json";
+fn config_path() -> std::path::PathBuf {
+    if cfg!(test) {
+        return std::env::temp_dir().join("conduit-test-config.json");
+    }
+    let base = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    let path = base.join("conduit").join("config.json");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    path
+}
 
 #[derive(Serialize, Deserialize)]
 struct AppConfig {
@@ -286,7 +296,10 @@ struct AppConfig {
 
 impl AppConfig {
     fn load() -> Self {
-        fs::read_to_string(CONFIG_PATH)
+        if cfg!(test) {
+            return Self::default();
+        }
+        fs::read_to_string(config_path())
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
@@ -294,7 +307,7 @@ impl AppConfig {
 
     fn save(&self) {
         if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = fs::write(CONFIG_PATH, json);
+            let _ = fs::write(config_path(), json);
         }
     }
 }
