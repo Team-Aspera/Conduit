@@ -21,7 +21,7 @@ use ksni::TrayMethods;
 #[cfg(not(target_os = "linux"))]
 use tray_icon::{TrayIcon, TrayIconBuilder};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Language {
     English,
     Chinese,
@@ -275,6 +275,40 @@ impl ksni::Tray for ConduitTray {
     }
 }
 
+const CONFIG_PATH: &str = "config.json";
+
+#[derive(Serialize, Deserialize)]
+struct AppConfig {
+    language: Language,
+    close_behavior: CloseBehavior,
+    forwarders: Vec<PortForwarderConfig>,
+}
+
+impl AppConfig {
+    fn load() -> Self {
+        fs::read_to_string(CONFIG_PATH)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn save(&self) {
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = fs::write(CONFIG_PATH, json);
+        }
+    }
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            language: Language::Chinese,
+            close_behavior: CloseBehavior::Quit,
+            forwarders: vec![],
+        }
+    }
+}
+
 struct ForwarderApp {
     current_page: Page,
     language: Language,
@@ -361,10 +395,22 @@ impl Application for ForwarderApp {
 
         let (sys_active, active_wans, _) = network::detect_system_forward_status();
         let report = network::get_system_network_report();
-        let default_lang = Language::Chinese;
+        let cfg = AppConfig::load();
 
         let logo_only = Handle::from_memory(include_bytes!("../assets/images/Conduit-logoonly.png").as_slice());
         let logo_full = Handle::from_memory(include_bytes!("../assets/images/Conduit.png").as_slice());
+
+        let port_forwarders: Vec<PortForwarder> = cfg.forwarders.iter().map(|fc| PortForwarder {
+            id: Uuid::new_v4(),
+            protocol: fc.protocol,
+            src_addr: fc.src_addr.clone(),
+            src_port: fc.src_port.clone(),
+            dst_addr: fc.dst_addr.clone(),
+            dst_port: fc.dst_port.clone(),
+            is_active: false,
+            status: Cow::Owned(format!("{} ({})", cfg.language.get("status_ready"), cfg.language.get("status_imported"))),
+            stop_tx: None,
+        }).collect();
 
         #[cfg(target_os = "linux")]
         {
@@ -375,11 +421,13 @@ impl Application for ForwarderApp {
             });
         }
 
+        let status_key = if sys_active { "status_active" } else { "status_ready" };
+
         (
             Self {
                 current_page: Page::SystemForward,
-                language: default_lang,
-                close_behavior: CloseBehavior::Quit,
+                language: cfg.language,
+                close_behavior: cfg.close_behavior,
                 logo_only,
                 logo_full,
                 #[cfg(not(target_os = "linux"))]
@@ -390,10 +438,10 @@ impl Application for ForwarderApp {
                 host_ip: "192.168.10.1".to_string(),
                 subnet_mask: "24".to_string(),
                 sys_active,
-                sys_status: if sys_active { default_lang.get("status_active").into() } else { default_lang.get("status_ready").into() },
+                sys_status: cfg.language.get(status_key).into(),
                 system_report: Some(report),
                 refresh_interval: 1,
-                port_forwarders: vec![],
+                port_forwarders,
             },
             Command::none(),
         )
@@ -435,7 +483,10 @@ impl Application for ForwarderApp {
                 }
                 return iced::window::close(iced::window::Id::MAIN);
             }
-            Message::SetCloseBehavior(behavior) => self.close_behavior = behavior,
+            Message::SetCloseBehavior(behavior) => {
+                self.close_behavior = behavior;
+                self.save_config();
+            }
             Message::LanguageChanged(lang) => {
                 self.language = lang;
                 let status_key = if self.sys_active { "status_active" } else { "status_ready" };
@@ -450,6 +501,7 @@ impl Application for ForwarderApp {
                         f.status = self.language.get("status_ready").into();
                     }
                 }
+                self.save_config();
             }
             Message::SwitchPage(page) => self.current_page = page,
             Message::RefreshInterfaces => {
@@ -523,17 +575,19 @@ impl Application for ForwarderApp {
                     id: Uuid::new_v4(), protocol: Protocol::TCP, src_addr: "0.0.0.0".to_string(), src_port: "".to_string(),
                     dst_addr: "127.0.0.1".to_string(), dst_port: "".to_string(), is_active: false, status: self.language.get("status_ready").into(), stop_tx: None,
                 });
+                self.save_config();
             }
             Message::RemoveForwarder(id) => {
                 if let Some(pos) = self.port_forwarders.iter().position(|f| f.id == id) {
                     if self.port_forwarders[pos].is_active { if let Some(tx) = self.port_forwarders[pos].stop_tx.take() { let _ = tx.send(true); } }
                     self.port_forwarders.remove(pos);
                 }
+                self.save_config();
             }
-            Message::SrcAddrChanged(id, addr) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_addr = addr; }
-            Message::SrcPortChanged(id, port) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_port = port; }
-            Message::DstAddrChanged(id, addr) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.dst_addr = addr; }
-            Message::DstPortChanged(id, port) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.dst_port = port; }
+            Message::SrcAddrChanged(id, addr) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_addr = addr; } self.save_config(); }
+            Message::SrcPortChanged(id, port) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_port = port; } self.save_config(); }
+            Message::DstAddrChanged(id, addr) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.dst_addr = addr; } self.save_config(); }
+            Message::DstPortChanged(id, port) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.dst_port = port; } self.save_config(); }
             Message::TogglePortForwarding(id) => {
                 if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
                     if f.is_active { if let Some(tx) = f.stop_tx.take() { let _ = tx.send(true); } f.is_active = false; f.status = self.language.get("status_stopped").into(); } 
@@ -888,6 +942,23 @@ impl Application for ForwarderApp {
                 .height(Length::Fill)
                 .style(theme::Container::Custom(Box::new(ContentStyle)))
         ].into()
+    }
+}
+
+impl ForwarderApp {
+    fn save_config(&self) {
+        let cfg = AppConfig {
+            language: self.language,
+            close_behavior: self.close_behavior,
+            forwarders: self.port_forwarders.iter().map(|f| PortForwarderConfig {
+                protocol: f.protocol,
+                src_addr: f.src_addr.clone(),
+                src_port: f.src_port.clone(),
+                dst_addr: f.dst_addr.clone(),
+                dst_port: f.dst_port.clone(),
+            }).collect(),
+        };
+        cfg.save();
     }
 }
 
