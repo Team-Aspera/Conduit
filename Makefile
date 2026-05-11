@@ -1,13 +1,21 @@
 BINARY   = conduit
 PREFIX  ?= /usr/local
 BUILD_DIR = target/release
+UNAME_M  = $(shell uname -m)
+ARCH     = $(if $(filter x86_64,$(UNAME_M)),amd64,$(UNAME_M))
+UNAME_S  = $(shell uname -s | tr A-Z a-z)
+DIST     = $(BINARY)-$(UNAME_S)-$(ARCH)
 
-.PHONY: all build install uninstall clean test lint fmt
+.PHONY: all build install uninstall clean test lint fmt dist
 
 all: build
 
 build:
 	cargo build --release
+
+dist: build
+	cp $(BUILD_DIR)/$(BINARY) $(BUILD_DIR)/$(DIST)
+	@echo "Binary: $(BUILD_DIR)/$(DIST)"
 
 install: build
 	sudo install -d $(DESTDIR)$(PREFIX)/bin

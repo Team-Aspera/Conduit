@@ -4,7 +4,7 @@ version = "0.2.3"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.12", features = ["tokio", "debug", "image"] }
+iced = { version = "0.12", features = ["tokio", "image"] }
 tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 tracing = "0.1"
@@ -19,3 +19,10 @@ tokio-serial = "5.4"
 tray-icon = "0.22.1"
 image = "0.25.9"
 ksni = "0.3.4"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
