@@ -223,10 +223,6 @@ enum Protocol {
     UDP,
 }
 
-impl Protocol {
-    const ALL: [Protocol; 2] = [Protocol::TCP, Protocol::UDP];
-}
-
 impl std::fmt::Display for Protocol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
@@ -330,7 +326,6 @@ enum Message {
     // 端口转发
     AddForwarder,
     RemoveForwarder(Uuid),
-    ProtocolChanged(Uuid, Protocol),
     SrcAddrChanged(Uuid, String),
     SrcPortChanged(Uuid, String),
     DstAddrChanged(Uuid, String),
@@ -342,7 +337,6 @@ enum Message {
     ExportConfig,
     ConfigFileToExportSelected(Option<PathBuf>),
     LanguageChanged(Language),
-    EventOccurred(iced::Event),
     Exit,
 }
 
@@ -441,10 +435,6 @@ impl Application for ForwarderApp {
                 }
                 return iced::window::close(iced::window::Id::MAIN);
             }
-            Message::EventOccurred(iced::Event::Window(_, iced::window::Event::CloseRequested)) => {
-                return Command::perform(async {}, |_| Message::CloseRequested);
-            }
-            Message::EventOccurred(_) => {}
             Message::SetCloseBehavior(behavior) => self.close_behavior = behavior,
             Message::LanguageChanged(lang) => {
                 self.language = lang;
@@ -540,7 +530,6 @@ impl Application for ForwarderApp {
                     self.port_forwarders.remove(pos);
                 }
             }
-            Message::ProtocolChanged(id, proto) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.protocol = proto; }
             Message::SrcAddrChanged(id, addr) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_addr = addr; }
             Message::SrcPortChanged(id, port) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_port = port; }
             Message::DstAddrChanged(id, addr) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.dst_addr = addr; }
