@@ -1,5 +1,9 @@
 # Conduit
 
+<p align="center">
+  <img src="assets/images/Conduit.png" alt="Conduit Logo" width="400">
+</p>
+
 Conduit 是一个跨平台的网络工具，基于 **Rust**、**Iced** 和 **Tokio** 构建，为复杂的网络转发任务提供现代化图形界面。
 
 ## 功能特性
