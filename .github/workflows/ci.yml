@@ -28,6 +28,9 @@ jobs:
             libgtk-3-dev libpcap-dev libudev-dev \
             libdbus-1-dev libappindicator3-dev
 
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+
       - name: Format check
         run: cargo fmt --check
 
