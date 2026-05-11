@@ -46,22 +46,7 @@ jobs:
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: check
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            suffix: linux-amd64
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            suffix: linux-arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            suffix: windows-x86_64.exe
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            suffix: darwin-amd64
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -70,29 +55,21 @@ jobs:
         run: |
           rustup update nightly
           rustup default nightly
-          rustup target add ${{ matrix.target }}
 
-      - name: Install Linux system dependencies
-        if: runner.os == 'Linux'
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-3-dev libpcap-dev libudev-dev \
             libdbus-1-dev libappindicator3-dev libxdo-dev
 
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release
 
       - name: Prepare binary
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/conduit${{ runner.os == 'Windows' && '.exe' || '' }} dist/conduit-${{ matrix.suffix }}
+          cp target/release/conduit dist/conduit-linux-amd64
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
