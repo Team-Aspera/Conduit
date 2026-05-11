@@ -903,8 +903,7 @@ mod tests {
             "label_wan", "label_lan", "label_lan_ip",
             "btn_start_share", "btn_stop_share", "btn_detect", "btn_refresh_iface",
             "btn_refresh", "btn_add_new", "btn_import", "btn_export",
-            "status_ready", "status_active",
-            "label_ip_forward", "label_enabled", "label_disabled",
+            "status_ready", "status_active", "label_ip_forward", "label_enabled", "label_disabled",
             "monitor_active_flows", "monitor_nat_rules", "monitor_port_rules", "monitor_listen_ports",
             "msg_det_failed", "msg_select_wan", "msg_select_lan",
             "msg_stopping", "msg_starting", "msg_stopped", "msg_active_bang",
@@ -912,12 +911,11 @@ mod tests {
             "status_running", "status_invalid_port", "status_stopped", "status_imported",
             "label_close_behavior", "opt_minimize", "opt_quit",
         ];
-
         for lang in [Language::Chinese, Language::English] {
             for key in &keys {
                 let val = lang.get(key);
-                assert!(!val.is_empty(), "Language::{:?}.get({:?}) returned empty", lang, key);
-                assert_ne!(val, "Unknown", "Language::{:?}.get({:?}) returned Unknown", lang, key);
+                assert!(!val.is_empty(), "{:?}.get({:?}) empty", lang, key);
+                assert_ne!(val, "Unknown", "{:?}.get({:?}) is Unknown", lang, key);
             }
         }
     }
@@ -932,5 +930,204 @@ mod tests {
     fn test_protocol_display() {
         assert_eq!(Protocol::TCP.to_string(), "TCP");
         assert_eq!(Protocol::UDP.to_string(), "UDP");
+    }
+
+    #[test]
+    fn test_close_behavior_serde() {
+        let cases = [(CloseBehavior::Minimize, "\"Minimize\""), (CloseBehavior::Quit, "\"Quit\"")];
+        for (val, expected_json) in &cases {
+            let json = serde_json::to_string(val).unwrap();
+            assert_eq!(json, *expected_json);
+            let back: CloseBehavior = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, *val);
+        }
+    }
+
+    #[test]
+    fn test_port_forwarder_config_serde() {
+        let config = PortForwarderConfig {
+            protocol: Protocol::TCP,
+            src_addr: "0.0.0.0".into(),
+            src_port: "8080".into(),
+            dst_addr: "192.168.1.100".into(),
+            dst_port: "80".into(),
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: PortForwarderConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.protocol, Protocol::TCP);
+        assert_eq!(back.src_addr, "0.0.0.0");
+        assert_eq!(back.src_port, "8080");
+        assert_eq!(back.dst_addr, "192.168.1.100");
+        assert_eq!(back.dst_port, "80");
+    }
+
+    #[test]
+    fn test_port_forwarder_config_list_serde() {
+        let configs = vec![
+            PortForwarderConfig { protocol: Protocol::TCP, src_addr: "0.0.0.0".into(), src_port: "8080".into(), dst_addr: "10.0.0.1".into(), dst_port: "80".into() },
+            PortForwarderConfig { protocol: Protocol::UDP, src_addr: "0.0.0.0".into(), src_port: "5353".into(), dst_addr: "10.0.0.1".into(), dst_port: "53".into() },
+        ];
+        let json = serde_json::to_string_pretty(&configs).unwrap();
+        let back: Vec<PortForwarderConfig> = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0].protocol, Protocol::TCP);
+        assert_eq!(back[1].protocol, Protocol::UDP);
+    }
+
+    #[tokio::test]
+    async fn test_app_page_switching() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert_eq!(app.current_page, Page::SystemForward);
+
+        let _cmd = app.update(Message::SwitchPage(Page::PortForward));
+        assert_eq!(app.current_page, Page::PortForward);
+
+        let _cmd = app.update(Message::SwitchPage(Page::SystemMonitor));
+        assert_eq!(app.current_page, Page::SystemMonitor);
+
+        let _cmd = app.update(Message::SwitchPage(Page::Settings));
+        assert_eq!(app.current_page, Page::Settings);
+
+        let _cmd = app.update(Message::SwitchPage(Page::About));
+        assert_eq!(app.current_page, Page::About);
+    }
+
+    #[tokio::test]
+    async fn test_app_language_switch() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert_eq!(app.language, Language::Chinese);
+
+        let _cmd = app.update(Message::LanguageChanged(Language::English));
+        assert_eq!(app.language, Language::English);
+
+        // Forwarders created before language switch should have updated status
+        let _cmd = app.update(Message::AddForwarder);
+        assert_eq!(app.port_forwarders[0].status, "Ready");
+
+        let _cmd = app.update(Message::LanguageChanged(Language::Chinese));
+        assert_eq!(app.port_forwarders[0].status, "就绪");
+    }
+
+    #[tokio::test]
+    async fn test_app_forwarder_crud() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert!(app.port_forwarders.is_empty());
+
+        let _cmd = app.update(Message::AddForwarder);
+        assert_eq!(app.port_forwarders.len(), 1);
+
+        let id = app.port_forwarders[0].id;
+        let _cmd = app.update(Message::SrcAddrChanged(id, "10.0.0.1".into()));
+        assert_eq!(app.port_forwarders[0].src_addr, "10.0.0.1");
+
+        let _cmd = app.update(Message::SrcPortChanged(id, "8080".into()));
+        assert_eq!(app.port_forwarders[0].src_port, "8080");
+
+        let _cmd = app.update(Message::DstAddrChanged(id, "192.168.1.1".into()));
+        assert_eq!(app.port_forwarders[0].dst_addr, "192.168.1.1");
+
+        let _cmd = app.update(Message::DstPortChanged(id, "80".into()));
+        assert_eq!(app.port_forwarders[0].dst_port, "80");
+
+        let _cmd = app.update(Message::RemoveForwarder(id));
+        assert!(app.port_forwarders.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_app_add_multiple_forwarders() {
+        let (mut app, _) = ForwarderApp::new(());
+        let _cmd = app.update(Message::AddForwarder);
+        let _cmd = app.update(Message::AddForwarder);
+        let _cmd = app.update(Message::AddForwarder);
+        assert_eq!(app.port_forwarders.len(), 3);
+
+        // Each has unique id
+        let ids: std::collections::HashSet<_> = app.port_forwarders.iter().map(|f| f.id).collect();
+        assert_eq!(ids.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_app_close_behavior() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert_eq!(app.close_behavior, CloseBehavior::Quit);
+
+        let _cmd = app.update(Message::SetCloseBehavior(CloseBehavior::Minimize));
+        assert_eq!(app.close_behavior, CloseBehavior::Minimize);
+
+        let _cmd = app.update(Message::SetCloseBehavior(CloseBehavior::Quit));
+        assert_eq!(app.close_behavior, CloseBehavior::Quit);
+    }
+
+    #[tokio::test]
+    async fn test_app_wan_selection() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert!(app.selected_wans.is_empty());
+
+        let _cmd = app.update(Message::WanToggled("eth0".into(), true));
+        assert!(app.selected_wans.contains(&"eth0".into()));
+
+        let _cmd = app.update(Message::WanToggled("wlan0".into(), true));
+        assert_eq!(app.selected_wans.len(), 2);
+
+        let _cmd = app.update(Message::WanToggled("eth0".into(), false));
+        assert!(!app.selected_wans.contains(&"eth0".into()));
+        assert_eq!(app.selected_wans.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_app_lan_selection() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert!(app.lan_interface.is_none());
+
+        let _cmd = app.update(Message::LanSelected("eth1".into()));
+        assert_eq!(app.lan_interface, Some("eth1".into()));
+    }
+
+    #[tokio::test]
+    async fn test_app_host_ip_changed() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert_eq!(app.host_ip, "192.168.10.1");
+
+        let _cmd = app.update(Message::HostIpChanged("10.0.0.1".into()));
+        assert_eq!(app.host_ip, "10.0.0.1");
+    }
+
+    #[tokio::test]
+    async fn test_app_subnet_mask_changed() {
+        let (mut app, _) = ForwarderApp::new(());
+        assert_eq!(app.subnet_mask, "24");
+
+        let _cmd = app.update(Message::SubnetMaskChanged("16".into()));
+        assert_eq!(app.subnet_mask, "16");
+    }
+
+    #[tokio::test]
+    async fn test_app_forwarder_toggle_validates_port() {
+        let (mut app, _) = ForwarderApp::new(());
+        let _cmd = app.update(Message::AddForwarder);
+        let fwd_id = app.port_forwarders[0].id;
+
+        // Empty port → should set status to "Invalid port"
+        let _cmd = app.update(Message::TogglePortForwarding(fwd_id));
+        assert!(!app.port_forwarders[0].is_active);
+        assert!(app.port_forwarders[0].status.contains("无效端口")
+            || app.port_forwarders[0].status.contains("Invalid port"));
+    }
+
+    #[tokio::test]
+    async fn test_app_forwarder_configures_correctly() {
+        let (mut app, _) = ForwarderApp::new(());
+        let _cmd = app.update(Message::AddForwarder);
+        let id = app.port_forwarders[0].id;
+
+        let _cmd = app.update(Message::SrcAddrChanged(id, "0.0.0.0".into()));
+        let _cmd = app.update(Message::SrcPortChanged(id, "12345".into()));
+        let _cmd = app.update(Message::DstAddrChanged(id, "10.0.0.1".into()));
+        let _cmd = app.update(Message::DstPortChanged(id, "80".into()));
+
+        assert_eq!(app.port_forwarders[0].src_addr, "0.0.0.0");
+        assert_eq!(app.port_forwarders[0].src_port, "12345");
+        assert_eq!(app.port_forwarders[0].dst_addr, "10.0.0.1");
+        assert_eq!(app.port_forwarders[0].dst_port, "80");
     }
 }
