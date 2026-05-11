@@ -235,3 +235,125 @@ pub async fn start_udp_forward(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn test_tcp_forward_proxies_data() {
+        let echo_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let echo_port = echo_listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                if let Ok((mut stream, _)) = echo_listener.accept().await {
+                    tokio::spawn(async move {
+                        let mut buf = vec![0u8; 4096];
+                        loop {
+                            if let Ok(n) = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+                                if n == 0 { break; }
+                                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, &buf[..n]).await;
+                            } else { break; }
+                        }
+                    });
+                }
+            }
+        });
+
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let forwarder_port = {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            port
+        };
+
+        let fwd = tokio::spawn(async move {
+            start_tcp_forward(
+                "127.0.0.1".into(), forwarder_port,
+                "127.0.0.1".into(), echo_port,
+                stop_rx,
+            ).await
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let mut client = TcpStream::connect(format!("127.0.0.1:{}", forwarder_port)).await.unwrap();
+        let msg = b"hello conduit";
+        client.write_all(msg).await.unwrap();
+
+        let mut buf = vec![0u8; 128];
+        let n = client.read(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], msg);
+
+        stop_tx.send(true).unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(2), fwd).await;
+    }
+
+    #[tokio::test]
+    async fn test_udp_forward_proxies_data() {
+        let echo = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let echo_port = echo.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 4096];
+            loop {
+                if let Ok((n, addr)) = echo.recv_from(&mut buf).await {
+                    let _ = echo.send_to(&buf[..n], addr).await;
+                }
+            }
+        });
+
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let fwd_port = {
+            let s = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            s.local_addr().unwrap().port()
+        };
+
+        let fwd = tokio::spawn(async move {
+            start_udp_forward(
+                "127.0.0.1".into(), fwd_port,
+                "127.0.0.1".into(), echo_port,
+                stop_rx,
+            ).await
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        client.connect(format!("127.0.0.1:{}", fwd_port)).await.unwrap();
+        let msg = b"hello conduit udp";
+        client.send(msg).await.unwrap();
+
+        let mut buf = vec![0u8; 128];
+        let n = client.recv(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], msg);
+
+        stop_tx.send(true).unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(2), fwd).await;
+    }
+
+    #[tokio::test]
+    async fn test_tcp_forward_stops_on_signal() {
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let fwd = tokio::spawn(async move {
+            start_tcp_forward(
+                "127.0.0.1".into(), port,
+                "127.0.0.1".into(), 9999,
+                stop_rx,
+            ).await
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let _ = TcpStream::connect(format!("127.0.0.1:{}", port)).await;
+
+        stop_tx.send(true).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(3), fwd).await;
+        assert!(result.is_ok(), "Forwarder did not stop in time");
+        assert!(result.unwrap().is_ok());
+    }
+}

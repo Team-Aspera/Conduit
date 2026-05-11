@@ -890,3 +890,47 @@ impl Application for ForwarderApp {
         ].into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_language_all_keys_non_empty() {
+        let keys = [
+            "nav_share", "nav_forward", "nav_monitor", "nav_about", "nav_settings",
+            "title_share", "title_forward", "title_monitor", "title_settings",
+            "label_wan", "label_lan", "label_lan_ip",
+            "btn_start_share", "btn_stop_share", "btn_detect", "btn_refresh_iface",
+            "btn_refresh", "btn_add_new", "btn_import", "btn_export",
+            "status_ready", "status_active",
+            "label_ip_forward", "label_enabled", "label_disabled",
+            "monitor_active_flows", "monitor_nat_rules", "monitor_port_rules", "monitor_listen_ports",
+            "msg_det_failed", "msg_select_wan", "msg_select_lan",
+            "msg_stopping", "msg_starting", "msg_stopped", "msg_active_bang",
+            "about_desc", "label_current_share", "label_active_iface",
+            "status_running", "status_invalid_port", "status_stopped", "status_imported",
+            "label_close_behavior", "opt_minimize", "opt_quit",
+        ];
+
+        for lang in [Language::Chinese, Language::English] {
+            for key in &keys {
+                let val = lang.get(key);
+                assert!(!val.is_empty(), "Language::{:?}.get({:?}) returned empty", lang, key);
+                assert_ne!(val, "Unknown", "Language::{:?}.get({:?}) returned Unknown", lang, key);
+            }
+        }
+    }
+
+    #[test]
+    fn test_language_unknown_key() {
+        assert_eq!(Language::Chinese.get("nonexistent"), "Unknown");
+        assert_eq!(Language::English.get("nonexistent"), "Unknown");
+    }
+
+    #[test]
+    fn test_protocol_display() {
+        assert_eq!(Protocol::TCP.to_string(), "TCP");
+        assert_eq!(Protocol::UDP.to_string(), "UDP");
+    }
+}
