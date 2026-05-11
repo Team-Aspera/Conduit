@@ -17,18 +17,30 @@ Conduit 是一个跨平台的网络工具，基于 **Rust**、**Iced** 和 **Tok
 
 ### 前置条件
 
-- [Rust](https://www.rust-lang.org/tools/install)（最新稳定版）
-- `pkexec`（Linux 下系统级 NAT 配置需要）
+**编译环境**
+- [Rust](https://www.rust-lang.org/tools/install) — 最低支持 1.84，推荐最新 nightly（项目使用 edition 2024）
+- 系统依赖：
+  - Linux: `libgtk-3-dev`、`libpcap-dev`、`libudev-dev`、`libdbus-1-dev`、`libappindicator3-dev`
+  - macOS / Windows：无需额外依赖
+
+**运行环境**
+- Linux：`pkexec` — 系统网络共享（NAT）需要 root 权限，通过 `pkexec` 提权
+- macOS / Windows：无需额外配置
 
 ### 安装与运行
 
 ```bash
 # 克隆仓库
-git clone git@github.com:xjimlinx/Conduit.git
+git clone https://github.com/Team-Aspera/Conduit.git
 cd Conduit
 
 # 运行应用
 cargo run --release
+```
+
+或通过 Makefile 安装到系统：
+```bash
+make install
 ```
 
 ## 使用指南

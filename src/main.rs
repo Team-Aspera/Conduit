@@ -16,9 +16,6 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 #[cfg(target_os = "linux")]
-use ksni;
-
-#[cfg(target_os = "linux")]
 use ksni::TrayMethods;
 
 #[cfg(not(target_os = "linux"))]
@@ -234,13 +231,18 @@ enum Page {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Protocol {
-    TCP,
-    UDP,
+    #[serde(rename = "TCP")]
+    Tcp,
+    #[serde(rename = "UDP")]
+    Udp,
 }
 
 impl std::fmt::Display for Protocol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            Protocol::Tcp => write!(f, "TCP"),
+            Protocol::Udp => write!(f, "UDP"),
+        }
     }
 }
 
@@ -679,7 +681,7 @@ impl Application for ForwarderApp {
             Message::AddForwarder => {
                 self.port_forwarders.push(PortForwarder {
                     id: Uuid::new_v4(),
-                    protocol: Protocol::TCP,
+                    protocol: Protocol::Tcp,
                     src_addr: "0.0.0.0".to_string(),
                     src_port: "".to_string(),
                     dst_addr: "127.0.0.1".to_string(),
@@ -733,31 +735,29 @@ impl Application for ForwarderApp {
                         }
                         f.is_active = false;
                         f.status = self.language.get("status_stopped").into();
+                    } else if let (Ok(sp), Ok(dp)) =
+                        (f.src_port.parse::<u16>(), f.dst_port.parse::<u16>())
+                    {
+                        let (tx, rx) = watch::channel(false);
+                        f.stop_tx = Some(tx);
+                        f.is_active = true;
+                        f.status = self.language.get("status_running").into();
+                        let s = f.src_addr.clone();
+                        let d = f.dst_addr.clone();
+                        let p = f.protocol;
+                        return Command::perform(
+                            async move {
+                                let res = if p == Protocol::Tcp {
+                                    network::start_tcp_forward(s, sp, d, dp, rx).await
+                                } else {
+                                    network::start_udp_forward(s, sp, d, dp, rx).await
+                                };
+                                res.map_err(|e| e.to_string())
+                            },
+                            move |res| Message::PortForwardingResult(id, res),
+                        );
                     } else {
-                        if let (Ok(sp), Ok(dp)) =
-                            (f.src_port.parse::<u16>(), f.dst_port.parse::<u16>())
-                        {
-                            let (tx, rx) = watch::channel(false);
-                            f.stop_tx = Some(tx);
-                            f.is_active = true;
-                            f.status = self.language.get("status_running").into();
-                            let s = f.src_addr.clone();
-                            let d = f.dst_addr.clone();
-                            let p = f.protocol;
-                            return Command::perform(
-                                async move {
-                                    let res = if p == Protocol::TCP {
-                                        network::start_tcp_forward(s, sp, d, dp, rx).await
-                                    } else {
-                                        network::start_udp_forward(s, sp, d, dp, rx).await
-                                    };
-                                    res.map_err(|e| e.to_string())
-                                },
-                                move |res| Message::PortForwardingResult(id, res),
-                            );
-                        } else {
-                            f.status = self.language.get("status_invalid_port").into();
-                        }
+                        f.status = self.language.get("status_invalid_port").into();
                     }
                 }
             }
@@ -1506,8 +1506,8 @@ mod tests {
 
     #[test]
     fn test_protocol_display() {
-        assert_eq!(Protocol::TCP.to_string(), "TCP");
-        assert_eq!(Protocol::UDP.to_string(), "UDP");
+        assert_eq!(Protocol::Tcp.to_string(), "TCP");
+        assert_eq!(Protocol::Udp.to_string(), "UDP");
     }
 
     #[test]
@@ -1527,7 +1527,7 @@ mod tests {
     #[test]
     fn test_port_forwarder_config_serde() {
         let config = PortForwarderConfig {
-            protocol: Protocol::TCP,
+            protocol: Protocol::Tcp,
             src_addr: "0.0.0.0".into(),
             src_port: "8080".into(),
             dst_addr: "192.168.1.100".into(),
@@ -1535,7 +1535,7 @@ mod tests {
         };
         let json = serde_json::to_string_pretty(&config).unwrap();
         let back: PortForwarderConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.protocol, Protocol::TCP);
+        assert_eq!(back.protocol, Protocol::Tcp);
         assert_eq!(back.src_addr, "0.0.0.0");
         assert_eq!(back.src_port, "8080");
         assert_eq!(back.dst_addr, "192.168.1.100");
@@ -1546,14 +1546,14 @@ mod tests {
     fn test_port_forwarder_config_list_serde() {
         let configs = vec![
             PortForwarderConfig {
-                protocol: Protocol::TCP,
+                protocol: Protocol::Tcp,
                 src_addr: "0.0.0.0".into(),
                 src_port: "8080".into(),
                 dst_addr: "10.0.0.1".into(),
                 dst_port: "80".into(),
             },
             PortForwarderConfig {
-                protocol: Protocol::UDP,
+                protocol: Protocol::Udp,
                 src_addr: "0.0.0.0".into(),
                 src_port: "5353".into(),
                 dst_addr: "10.0.0.1".into(),
@@ -1563,8 +1563,8 @@ mod tests {
         let json = serde_json::to_string_pretty(&configs).unwrap();
         let back: Vec<PortForwarderConfig> = serde_json::from_str(&json).unwrap();
         assert_eq!(back.len(), 2);
-        assert_eq!(back[0].protocol, Protocol::TCP);
-        assert_eq!(back[1].protocol, Protocol::UDP);
+        assert_eq!(back[0].protocol, Protocol::Tcp);
+        assert_eq!(back[1].protocol, Protocol::Udp);
     }
 
     #[tokio::test]

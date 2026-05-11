@@ -9,6 +9,8 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{Mutex, watch};
 use tokio::time::{Duration, Instant};
 
+type ClientMap = Arc<Mutex<HashMap<SocketAddr, (Arc<UdpSocket>, Instant)>>>;
+
 #[derive(Debug, Clone)]
 pub struct SystemReport {
     pub ip_forward_enabled: bool,
@@ -242,8 +244,7 @@ pub async fn start_udp_forward(
     let dst_socket_addr = format!("{}:{}", dst_addr, dst_port);
     let socket = Arc::new(UdpSocket::bind(&src_socket_addr).await?);
 
-    let clients: Arc<Mutex<HashMap<SocketAddr, (Arc<UdpSocket>, Instant)>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let clients: ClientMap = Arc::new(Mutex::new(HashMap::new()));
     let mut buf = [0u8; 4096];
 
     loop {
