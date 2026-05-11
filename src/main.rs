@@ -311,6 +311,7 @@ struct ForwarderApp {
 #[derive(Debug, Clone)]
 enum Message {
     SwitchPage(Page),
+    SetCloseBehavior(CloseBehavior),
     CloseRequested,
     TrayClicked,
     // 系统转发
