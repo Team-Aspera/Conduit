@@ -62,6 +62,17 @@ Conduit 是一个跨平台的网络工具，提供图形化界面简化网络共
 
 ## 配置
 
-- `config.json` — 运行时配置文件（已 gitignore）
-- `config.sample.json` — 配置模板
-- JSON 格式导入/导出端口转发规则
+### 自动保存（应用设置）
+
+位置：`~/.config/conduit/config.json`（XDG 标准路径，跨平台自动适配）
+
+保存内容：
+- `language` — 界面语言（Chinese / English）
+- `close_behavior` — 关闭窗口行为（Minimize / Quit）
+- `forwarders` — 端口转发规则列表
+
+启动时自动加载，设置变更时实时写入。
+
+### 手动导入/导出
+
+通过文件选择器导入/导出端口转发规则（纯 JSON 数组格式），与自动保存互不冲突。
