@@ -1,60 +1,60 @@
-# Changelog
+# 更新日志
 
 ## [0.2.3] - 2025-03
 
-### Added
-- Settings page to configure window close behavior (minimize to tray / quit)
-- Display current active share IP and interface in Network Share page
+### 新增
+- 设置页面，支持配置窗口关闭行为（最小化到托盘 / 退出）
+- 网络共享页面显示当前活跃的共享 IP 和接口信息
 
-### Fixed
-- Port forwarder localization and arrow icon rendering issues
-- Remove assigned IP address when stopping network share
+### 修复
+- 端口转发本地化与箭头图标渲染问题
+- 停止网络共享时移除已分配的 IP 地址
 
 ## [0.2.2] - 2025-02
 
-### Added
-- Install and uninstall scripts with desktop entry support
-- Logo images integrated into sidebar and About page
+### 新增
+- 安装/卸载脚本，支持桌面入口（desktop entry）
+- 侧边栏和关于页面集成 Logo 图片
 
-### Changed
-- Downscaled logo images to improve About page rendering performance
-- Made system monitor refresh asynchronous
+### 变更
+- 压缩 Logo 图片体积，提升关于页面渲染性能
+- 系统监控刷新改为异步
 
-### Fixed
-- UDP forwarder subtask termination logic
-- Graceful exit with iptables cleanup
+### 修复
+- UDP 转发子任务终止逻辑
+- 退出时清理 iptables 规则
 
 ## [0.2.1] - 2025-01
 
-### Added
-- Windows support framework with conditional compilation
-- Makefile for cross-compilation
+### 新增
+- 条件编译支持的 Windows 框架
+- 交叉编译用的 Makefile
 
-### Fixed
-- Bundled LXGW WenKai Lite font to fix Chinese character rendering
-- Bundled Noto Sans Symbols 2 to fix icon rendering
-- iptables bad rule warnings during cleanup
+### 修复
+- 捆绑 LXGW WenKai Lite 字体，修复中文渲染
+- 捆绑 Noto Sans Symbols 2 字体，修复图标渲染
+- 清理时 iptables 规则不存在的警告
 
-### Changed
-- UI overhaul with sidebar navigation and card layouts
+### 变更
+- UI 全面改版，引入侧边栏导航和卡片布局
 
 ## [0.2.0] - 2024-12
 
-### Added
-- System Monitor page with auto-refresh
-- i18n support (Chinese / English)
-- Config import/export using file picker
-- Detection status for active NAT rules
+### 新增
+- 系统监控页面，支持自动刷新
+- 国际化支持（中文 / 英文）
+- 配置文件导入/导出（文件选择器）
+- NAT 规则活跃状态检测
 
-### Fixed
-- Chinese character rendering (bundled Noto Sans CJK SC font)
-- Detect Status reliability and state preservation
+### 修复
+- 中文渲染问题（捆绑 Noto Sans CJK SC 字体）
+- 检测状态可靠性与状态保持
 
 ## [0.1.0] - 2024-11
 
-### Added
-- Initial release
-- System network share (NAT) via iptables
-- Multi-task TCP and UDP port forwarding
-- Modern UI built with Iced framework
-- Async engine powered by Tokio
+### 新增
+- 初始版本发布
+- 基于 iptables 的系统网络共享（NAT）
+- 多任务 TCP/UDP 端口转发
+- 基于 Iced 框架的现代化 UI
+- Tokio 异步引擎

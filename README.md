@@ -1,37 +1,37 @@
 # Conduit
 
-Conduit is a high-performance, cross-platform network utility built with **Rust**, **Iced**, and **Tokio**. It provides a modern GUI for complex network forwarding tasks.
+Conduit 是一个高性能、跨平台的网络工具，基于 **Rust**、**Iced** 和 **Tokio** 构建，为复杂的网络转发任务提供现代化图形界面。
 
-## Features
+## 功能特性
 
-- **System Network Share (NAT)**: Easily share internet from multiple WAN interfaces to a specific LAN interface (e.g., for development boards).
-- **Multi-task Port Forwarding**: Concurrent TCP and UDP port forwarding (Sokit-like) with support for multiple active rules.
-- **Asynchronous Engine**: Powered by `tokio` for low-latency, high-throughput data proxying.
-- **Modern UI**: A clean, responsive interface built with the `iced` framework.
+- **系统网络共享 (NAT)**：从多个 WAN 接口共享网络到指定 LAN 接口（如为开发板提供网络接入）
+- **多任务端口转发**：并发 TCP/UDP 端口转发，支持多条转发规则同时运行
+- **异步引擎**：基于 `tokio` 的高吞吐、低延迟数据代理
+- **现代化界面**：使用 `iced` 框架构建的简洁响应式 UI
 
-## Getting Started
+## 快速开始
 
-### Prerequisites
+### 前置条件
 
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- `pkexec` (for system-level NAT configuration on Linux)
+- [Rust](https://www.rust-lang.org/tools/install)（最新稳定版）
+- `pkexec`（Linux 下系统级 NAT 配置需要）
 
-### Installation & Running
+### 安装与运行
 
 ```bash
-# Clone the repository
+# 克隆仓库
 git clone git@github.com:xjimlinx/Conduit.git
 cd Conduit
 
-# Run the application
+# 运行应用
 cargo run --release
 ```
 
-## Usage
+## 使用指南
 
-1. **Network Share**: Select one or more WAN interfaces, pick your LAN target, set the gateway IP, and click "Start Share".
-2. **Port Forwarding**: Go to the "Port Forwarders" tab, click "Add New", configure your protocol (TCP/UDP) and ports, then click "Start".
+1. **网络共享**：选择一个或多个 WAN 接口，指定 LAN 目标接口和网关 IP，点击"开始共享"
+2. **端口转发**：切换到"端口转发"标签页，点击"添加新转发"，配置协议（TCP/UDP）和端口，点击"开始"
 
-## License
+## 协议
 
-MIT License
+MIT
