@@ -10,6 +10,16 @@ use serde::{Serialize, Deserialize};
 use std::fs;
 use std::path::PathBuf;
 use std::borrow::Cow;
+use iced::futures::SinkExt;
+
+#[cfg(target_os = "linux")]
+use ksni;
+
+#[cfg(target_os = "linux")]
+use ksni::TrayMethods;
+
+#[cfg(not(target_os = "linux"))]
+use tray_icon::{TrayIcon, TrayIconBuilder};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Language {
@@ -70,7 +80,7 @@ impl Language {
             (Language::Chinese, "status_stopped") => "已停止",
             (Language::Chinese, "status_imported") => "已导入",
             (Language::Chinese, "label_close_behavior") => "关闭窗口行为",
-            (Language::Chinese, "opt_minimize") => "最小化到任务栏",
+            (Language::Chinese, "opt_minimize") => "最小化到系统托盘",
             (Language::Chinese, "opt_quit") => "直接退出程序 (清理规则)",
             
             (Language::English, "nav_share") => "Network Share",
@@ -117,7 +127,7 @@ impl Language {
             (Language::English, "status_stopped") => "Stopped",
             (Language::English, "status_imported") => "Imported",
             (Language::English, "label_close_behavior") => "On Window Close",
-            (Language::English, "opt_minimize") => "Minimize to taskbar",
+            (Language::English, "opt_minimize") => "Minimize to tray",
             (Language::English, "opt_quit") => "Quit application (Cleanup rules)",
             _ => "Unknown",
         }
@@ -173,10 +183,27 @@ impl container::StyleSheet for ContentStyle {
 }
 
 pub fn main() -> iced::Result {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("conduit=info".parse().unwrap())
+                .add_directive("wgpu=error".parse().unwrap())
+                .add_directive("naga=error".parse().unwrap())
+        )
+        .init();
+
     ForwarderApp::run(Settings {
-        fonts: vec![include_bytes!("../assets/fonts/LXGWWenKaiLite-Regular.ttf").as_slice().into()],
+        fonts: vec![
+            include_bytes!("../assets/fonts/LXGWWenKaiLite-Regular.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf").as_slice().into(),
+        ],
         default_font: iced::Font::with_name("LXGW WenKai Lite"),
+        window: iced::window::Settings {
+            min_size: Some(iced::Size::new(800.0, 600.0)),
+            exit_on_close_request: false, 
+            ..Default::default()
+        },
+        antialiasing: true,
         ..Settings::default()
     })
 }
@@ -227,14 +254,42 @@ struct PortForwarder {
     stop_tx: Option<watch::Sender<bool>>,
 }
 
+#[cfg(target_os = "linux")]
+struct ConduitTray {
+    tx: iced::futures::channel::mpsc::Sender<Message>,
+}
+
+#[cfg(target_os = "linux")]
+impl ksni::Tray for ConduitTray {
+    fn id(&self) -> String { "conduit".into() }
+    fn icon_name(&self) -> String { "conduit".into() }
+    fn title(&self) -> String { "Conduit".into() }
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            title: "Conduit".into(),
+            description: "Conduit Network Utility".into(),
+            ..Default::default()
+        }
+    }
+    fn activate(&mut self, _x: i32, _y: i32) {
+        let mut tx = self.tx.clone();
+        tokio::spawn(async move {
+            let _ = tx.send(Message::TrayClicked).await;
+        });
+    }
+}
+
 struct ForwarderApp {
     current_page: Page,
     language: Language,
     close_behavior: CloseBehavior,
     
-    // 资源缓存
+    // 资源与托盘
     logo_only: Handle,
     logo_full: Handle,
+    
+    #[cfg(not(target_os = "linux"))]
+    _tray_icon: Option<tray_icon::TrayIcon>,
 
     // 系统转发
     interfaces: Vec<String>,
@@ -256,7 +311,8 @@ struct ForwarderApp {
 #[derive(Debug, Clone)]
 enum Message {
     SwitchPage(Page),
-    SetCloseBehavior(CloseBehavior),
+    CloseRequested,
+    TrayClicked,
     // 系统转发
     WanToggled(String, bool),
     LanSelected(String),
@@ -315,6 +371,15 @@ impl Application for ForwarderApp {
         let logo_only = Handle::from_memory(include_bytes!("../assets/images/Conduit-logoonly.png").as_slice());
         let logo_full = Handle::from_memory(include_bytes!("../assets/images/Conduit.png").as_slice());
 
+        #[cfg(target_os = "linux")]
+        {
+            let (tx, _rx) = iced::futures::channel::mpsc::channel(100);
+            let tray = ConduitTray { tx };
+            tokio::spawn(async move {
+                let _ = tray.spawn().await;
+            });
+        }
+
         (
             Self {
                 current_page: Page::SystemForward,
@@ -322,6 +387,8 @@ impl Application for ForwarderApp {
                 close_behavior: CloseBehavior::Quit,
                 logo_only,
                 logo_full,
+                #[cfg(not(target_os = "linux"))]
+                _tray_icon: None,
                 interfaces: ifaces,
                 selected_wans: active_wans,
                 lan_interface: None,
@@ -341,39 +408,52 @@ impl Application for ForwarderApp {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::Exit => return iced::window::close(iced::window::Id::MAIN),
-            Message::EventOccurred(iced::Event::Window(_, iced::window::Event::CloseRequested)) => {
+            Message::Exit => {
+                tracing::info!("Exiting application...");
+                return iced::window::close(iced::window::Id::MAIN);
+            }
+            Message::TrayClicked => {
+                tracing::info!("Tray clicked, restoring window...");
+                return iced::window::change_mode(iced::window::Id::MAIN, iced::window::Mode::Windowed);
+            }
+            Message::CloseRequested => {
                 if self.close_behavior == CloseBehavior::Minimize {
-                    return iced::window::minimize(iced::window::Id::MAIN, true);
+                    tracing::info!("Minimizing to tray...");
+                    return Command::batch(vec![
+                        iced::window::change_mode(iced::window::Id::MAIN, iced::window::Mode::Hidden),
+                        iced::window::minimize(iced::window::Id::MAIN, true),
+                    ]);
                 }
+                tracing::info!("Quitting application with cleanup...");
                 if self.sys_active {
                     let wans = self.selected_wans.clone();
                     let lan = self.lan_interface.clone();
                     let host_ip = self.host_ip.clone();
                     let mask = self.subnet_mask.clone();
                     if let Some(l) = lan {
+                        let h = host_ip.clone();
+                        let m = mask.clone();
                         return Command::perform(async move {
-                            let _ = network::stop_system_forwarding(wans, &l, &host_ip, &mask);
+                            let _ = network::stop_system_forwarding(wans, &l, &h, &m);
                         }, |_| Message::Exit);
                     }
                 }
                 return iced::window::close(iced::window::Id::MAIN);
             }
+            Message::EventOccurred(iced::Event::Window(_, iced::window::Event::CloseRequested)) => {
+                return Command::perform(async {}, |_| Message::CloseRequested);
+            }
             Message::EventOccurred(_) => {}
             Message::SetCloseBehavior(behavior) => self.close_behavior = behavior,
             Message::LanguageChanged(lang) => {
                 self.language = lang;
-                // 刷新系统状态文字
                 let status_key = if self.sys_active { "status_active" } else { "status_ready" };
-                // 如果当前正在显示某些临时消息（如错误提示），简单刷新为就绪/活跃状态
                 self.sys_status = self.language.get(status_key).into();
 
-                // 同时刷新所有端口转发项的状态显示
                 for f in &mut self.port_forwarders {
                     if f.is_active {
                         f.status = self.language.get("status_running").into();
                     } else if f.status.contains("Error") || f.status.contains("错误") {
-                        // 错误信息保持原样，或者简单重置为停止状态
                         f.status = self.language.get("status_stopped").into();
                     } else {
                         f.status = self.language.get("status_ready").into();
@@ -398,9 +478,6 @@ impl Application for ForwarderApp {
             }
             Message::DetectSystemForward => {
                 let (active, wans, failed) = network::detect_system_forward_status();
-                
-                // 如果检测失败（通常是权限问题），我们不应该盲目地将状态设为 Inactive
-                // 而是保留当前的 sys_active 状态，并给出提示
                 if failed {
                     self.sys_status = self.language.get("msg_det_failed").into();
                 } else {
@@ -445,7 +522,6 @@ impl Application for ForwarderApp {
                         self.sys_status = if target { self.language.get("msg_active_bang").into() } else { self.language.get("msg_stopped").into() }; 
                     }
                     Err(e) => {
-                        // 如果失败了，不应该翻转 sys_active 状态，保持原样
                         self.sys_status = format!("{}: {}", if self.language == Language::Chinese { "错误" } else { "Error" }, e).into();
                     }
                 }
@@ -549,7 +625,31 @@ impl Application for ForwarderApp {
     }
 
     fn subscription(&self) -> iced::Subscription<Message> {
-        let mut subs = vec![iced::event::listen().map(Message::EventOccurred)];
+        let mut subs: Vec<iced::Subscription<Message>> = vec![
+            iced::event::listen_with(|event, _status| match event {
+                iced::Event::Window(_, iced::window::Event::CloseRequested) => {
+                    Some(Message::CloseRequested)
+                }
+                _ => None,
+            }),
+        ];
+
+        #[cfg(target_os = "linux")]
+        subs.push(iced::subscription::channel(
+            std::any::TypeId::of::<ConduitTray>(),
+            100,
+            |mut output| async move {
+                // ksni 的点击事件会通过 activate 触发，我们在那里发送 TrayClicked
+                // 此处我们监听系统的底层事件作为补充 (可选)
+                let receiver = tray_icon::TrayIconEvent::receiver();
+                loop {
+                    if let Ok(_event) = receiver.try_recv() {
+                        let _ = output.send(Message::TrayClicked).await;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+            },
+        ));
         
         if self.current_page == Page::SystemMonitor {
             subs.push(iced::time::every(std::time::Duration::from_secs(self.refresh_interval)).map(|_| Message::RefreshSystemReport));
@@ -561,7 +661,6 @@ impl Application for ForwarderApp {
     fn view(&self) -> Element<Message> {
         let lang = self.language;
 
-        // 侧边栏按钮样式
         let sidebar_button = |label: &str, icon: &str, page: Page, current_page: Page| {
             let is_selected = page == current_page;
             button(
@@ -578,7 +677,6 @@ impl Application for ForwarderApp {
             .style(if is_selected { theme::Button::Primary } else { theme::Button::Text })
         };
 
-        // 侧边栏
         let sidebar = container(
             column![
                 container(image(self.logo_only.clone()).width(50)).width(Length::Fill).center_x(),
@@ -621,7 +719,6 @@ impl Application for ForwarderApp {
                         image(self.logo_full.clone()).width(250),
                         text(format!("v0.2.3")).size(14).style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))),
                         vertical_space().height(20),
-
                         text(lang.get("about_desc")).size(16),
                         vertical_space().height(30),
                         text("GitHub: github.com/xjimlinx/Conduit").size(12),

@@ -28,7 +28,13 @@ cp target/release/$APP_NAME ~/.local/bin/
 echo "正在安装图标..."
 cp assets/images/Conduit-logoonly.png ~/.local/share/icons/$ICON_NAME
 
-# 5. 创建 .desktop 文件
+# 5. 拷贝字体
+echo "正在安装字体..."
+mkdir -p ~/.local/share/fonts
+cp assets/fonts/NotoSansSymbols2-Regular.ttf ~/.local/share/fonts/
+fc-cache -f ~/.local/share/fonts/ 2>/dev/null || true
+
+# 6. 创建 .desktop 文件
 echo "正在生成桌面快捷方式..."
 CAT_PATH=$(which cat)
 $CAT_PATH <<EOF > ~/.local/share/applications/$APP_NAME.desktop
@@ -43,7 +49,7 @@ Categories=Network;Utility;
 Keywords=Network;Forward;Share;
 EOF
 
-# 6. 设置权限
+# 7. 设置权限
 chmod +x ~/.local/share/applications/$APP_NAME.desktop
 
 echo "------------------------------------------------"
