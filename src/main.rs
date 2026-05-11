@@ -694,10 +694,10 @@ impl Application for ForwarderApp {
             }
             Message::RemoveForwarder(id) => {
                 if let Some(pos) = self.port_forwarders.iter().position(|f| f.id == id) {
-                    if self.port_forwarders[pos].is_active {
-                        if let Some(tx) = self.port_forwarders[pos].stop_tx.take() {
-                            let _ = tx.send(true);
-                        }
+                    if self.port_forwarders[pos].is_active
+                        && let Some(tx) = self.port_forwarders[pos].stop_tx.take()
+                    {
+                        let _ = tx.send(true);
                     }
                     self.port_forwarders.remove(pos);
                 }
@@ -762,20 +762,20 @@ impl Application for ForwarderApp {
                 }
             }
             Message::PortForwardingResult(id, res) => {
-                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
-                    if let Err(e) = res {
-                        f.is_active = false;
-                        f.status = format!(
-                            "{}: {}",
-                            if self.language == Language::Chinese {
-                                "错误"
-                            } else {
-                                "Error"
-                            },
-                            e
-                        )
-                        .into();
-                    }
+                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id)
+                    && let Err(e) = res
+                {
+                    f.is_active = false;
+                    f.status = format!(
+                        "{}: {}",
+                        if self.language == Language::Chinese {
+                            "错误"
+                        } else {
+                            "Error"
+                        },
+                        e
+                    )
+                    .into();
                 }
             }
             Message::ImportConfig => {
@@ -791,30 +791,27 @@ impl Application for ForwarderApp {
                 );
             }
             Message::ConfigFileSelected(path) => {
-                if let Some(p) = path {
-                    if let Ok(content) = fs::read_to_string(p) {
-                        if let Ok(configs) =
-                            serde_json::from_str::<Vec<PortForwarderConfig>>(&content)
-                        {
-                            for cfg in configs {
-                                self.port_forwarders.push(PortForwarder {
-                                    id: Uuid::new_v4(),
-                                    protocol: cfg.protocol,
-                                    src_addr: cfg.src_addr,
-                                    src_port: cfg.src_port,
-                                    dst_addr: cfg.dst_addr,
-                                    dst_port: cfg.dst_port,
-                                    is_active: false,
-                                    status: format!(
-                                        "{} ({})",
-                                        self.language.get("status_ready"),
-                                        self.language.get("status_imported")
-                                    )
-                                    .into(),
-                                    stop_tx: None,
-                                });
-                            }
-                        }
+                if let Some(p) = path
+                    && let Ok(content) = fs::read_to_string(p)
+                    && let Ok(configs) = serde_json::from_str::<Vec<PortForwarderConfig>>(&content)
+                {
+                    for cfg in configs {
+                        self.port_forwarders.push(PortForwarder {
+                            id: Uuid::new_v4(),
+                            protocol: cfg.protocol,
+                            src_addr: cfg.src_addr,
+                            src_port: cfg.src_port,
+                            dst_addr: cfg.dst_addr,
+                            dst_port: cfg.dst_port,
+                            is_active: false,
+                            status: format!(
+                                "{} ({})",
+                                self.language.get("status_ready"),
+                                self.language.get("status_imported")
+                            )
+                            .into(),
+                            stop_tx: None,
+                        });
                     }
                 }
             }
@@ -889,7 +886,7 @@ impl Application for ForwarderApp {
         iced::Subscription::batch(subs)
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let lang = self.language;
 
         let sidebar_button = |label: &str, icon: &str, page: Page, current_page: Page| {
@@ -1335,7 +1332,7 @@ impl Application for ForwarderApp {
                                     .spacing(10)
                                     .align_items(Alignment::Center),
                                     row![
-                                        text(format!("● {}", &f.status))
+                                        text(format!("● {}", f.status))
                                             .size(12)
                                             .style(theme::Text::Color(if f.is_active {
                                                 iced::Color::from_rgb(0.2, 0.7, 0.2)

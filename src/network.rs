@@ -64,26 +64,24 @@ pub fn get_system_network_report() -> SystemReport {
         report.iptables_failed = true;
     }
 
-    if let Ok(output) = Command::new("ss").args(["-tlnpu"]).output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines().skip(1) {
-                report.listening_ports.push(line.to_string());
-            }
+    if let Ok(output) = Command::new("ss").args(["-tlnpu"]).output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines().skip(1) {
+            report.listening_ports.push(line.to_string());
         }
     }
 
-    if let Ok(output) = Command::new("ss").args(["-apn"]).output() {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                if line.contains("conduit")
-                    && (line.contains("ESTAB")
-                        || line.contains("LISTEN")
-                        || line.contains("UNCONN"))
-                {
-                    report.active_connections.push(line.to_string());
-                }
+    if let Ok(output) = Command::new("ss").args(["-apn"]).output()
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains("conduit")
+                && (line.contains("ESTAB") || line.contains("LISTEN") || line.contains("UNCONN"))
+            {
+                report.active_connections.push(line.to_string());
             }
         }
     }
@@ -96,10 +94,10 @@ pub fn detect_system_forward_status() -> (bool, Vec<String>, bool) {
     let mut active_wans = Vec::new();
     for rule in &report.nat_masquerade {
         let parts: Vec<&str> = rule.split_whitespace().collect();
-        if let Some(pos) = parts.iter().position(|&r| r == "-o") {
-            if let Some(iface) = parts.get(pos + 1) {
-                active_wans.push(iface.to_string());
-            }
+        if let Some(pos) = parts.iter().position(|&r| r == "-o")
+            && let Some(iface) = parts.get(pos + 1)
+        {
+            active_wans.push(iface.to_string());
         }
     }
     let active = report.ip_forward_enabled && !active_wans.is_empty();
@@ -187,10 +185,7 @@ fn run_batch_as_root(commands: Vec<String>) -> std::io::Result<()> {
     if status.success() {
         Ok(())
     } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Root failed",
-        ))
+        Err(std::io::Error::other("Root failed"))
     }
 }
 
