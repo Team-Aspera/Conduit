@@ -774,7 +774,7 @@ impl Application for ForwarderApp {
                 container(
                     column![
                         image(self.logo_full.clone()).width(250),
-                        text(format!("v0.2.3")).size(14).style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))),
+                        text(format!("v{}", env!("CARGO_PKG_VERSION"))).size(14).style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))),
                         vertical_space().height(20),
                         text(lang.get("about_desc")).size(16),
                         vertical_space().height(30),
