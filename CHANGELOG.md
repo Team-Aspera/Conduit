@@ -52,10 +52,11 @@
 - 关于页面内容居中
 
 ### 修复
-- 修复中文渲染：更换为 LXGW WenKai Lite 字体
+- 修复中文渲染：更换为 LXGW WenKai Lite 字体（替代 Noto Sans CJK SC）
 - 修复图标渲染：捆绑 Noto Sans Symbols 2 字体
 - 启用 Advanced Shaping 修复 Emoji 显示
 - 静默 iptables 清理时的不存在规则警告
+- 恢复系统字体回退机制
 
 ## [0.2.0] - 2026-04-26
 
