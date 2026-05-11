@@ -1,13 +1,13 @@
 use anyhow::Result;
+use pnet::datalink;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::io::copy_bidirectional;
-use tokio::sync::{watch, Mutex};
-use tokio::time::{Duration, Instant};
 use std::process::Command;
-use pnet::datalink;
+use std::sync::Arc;
+use tokio::io::copy_bidirectional;
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::{Mutex, watch};
+use tokio::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct SystemReport {
@@ -41,7 +41,9 @@ pub fn get_system_network_report() -> SystemReport {
     };
 
     report.ip_forward_enabled = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
-        .unwrap_or_default().trim() == "1";
+        .unwrap_or_default()
+        .trim()
+        == "1";
 
     if let Ok(output) = Command::new("iptables").args(["-t", "nat", "-S"]).output() {
         if output.status.success() {
@@ -73,7 +75,11 @@ pub fn get_system_network_report() -> SystemReport {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
-                if line.contains("conduit") && (line.contains("ESTAB") || line.contains("LISTEN") || line.contains("UNCONN")) {
+                if line.contains("conduit")
+                    && (line.contains("ESTAB")
+                        || line.contains("LISTEN")
+                        || line.contains("UNCONN"))
+                {
                     report.active_connections.push(line.to_string());
                 }
             }
@@ -100,40 +106,90 @@ pub fn detect_system_forward_status() -> (bool, Vec<String>, bool) {
 
 // --- 系统转发控制 ---
 
-pub fn start_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str, mask: &str) -> std::io::Result<()> {
+pub fn start_system_forwarding(
+    wan_ifs: Vec<String>,
+    lan_if: &str,
+    host_ip: &str,
+    mask: &str,
+) -> std::io::Result<()> {
     let mut commands = Vec::new();
     commands.push("echo 1 > /proc/sys/net/ipv4/ip_forward".to_string());
-    commands.push(format!("ip addr add {}/{} dev {} 2>/dev/null || true", host_ip, mask, lan_if));
+    commands.push(format!(
+        "ip addr add {}/{} dev {} 2>/dev/null || true",
+        host_ip, mask, lan_if
+    ));
     commands.push(format!("ip link set {} up", lan_if));
     for wan_if in wan_ifs {
-        commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true", wan_if));
-        commands.push(format!("iptables -t nat -A POSTROUTING -o {} -j MASQUERADE", wan_if));
+        commands.push(format!(
+            "iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true",
+            wan_if
+        ));
+        commands.push(format!(
+            "iptables -t nat -A POSTROUTING -o {} -j MASQUERADE",
+            wan_if
+        ));
         commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
-        commands.push(format!("iptables -A FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT", wan_if, lan_if));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true", lan_if, wan_if));
-        commands.push(format!("iptables -A FORWARD -i {} -o {} -j ACCEPT", lan_if, wan_if));
+        commands.push(format!(
+            "iptables -A FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT",
+            wan_if, lan_if
+        ));
+        commands.push(format!(
+            "iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true",
+            lan_if, wan_if
+        ));
+        commands.push(format!(
+            "iptables -A FORWARD -i {} -o {} -j ACCEPT",
+            lan_if, wan_if
+        ));
     }
     run_batch_as_root(commands)
 }
 
-pub fn stop_system_forwarding(wan_ifs: Vec<String>, lan_if: &str, host_ip: &str, mask: &str) -> std::io::Result<()> {
+pub fn stop_system_forwarding(
+    wan_ifs: Vec<String>,
+    lan_if: &str,
+    host_ip: &str,
+    mask: &str,
+) -> std::io::Result<()> {
     let mut commands = Vec::new();
     for wan_if in wan_ifs {
-        commands.push(format!("iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true", wan_if));
+        commands.push(format!(
+            "iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true",
+            wan_if
+        ));
         commands.push(format!("iptables -D FORWARD -i {} -o {} -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true", wan_if, lan_if));
-        commands.push(format!("iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true", lan_if, wan_if));
+        commands.push(format!(
+            "iptables -D FORWARD -i {} -o {} -j ACCEPT 2>/dev/null || true",
+            lan_if, wan_if
+        ));
     }
     // 移除共享时分配的 IP 地址
-    commands.push(format!("ip addr del {}/{} dev {} 2>/dev/null || true", host_ip, mask, lan_if));
+    commands.push(format!(
+        "ip addr del {}/{} dev {} 2>/dev/null || true",
+        host_ip, mask, lan_if
+    ));
     commands.push("echo 0 > /proc/sys/net/ipv4/ip_forward".to_string());
     run_batch_as_root(commands)
 }
 
 fn run_batch_as_root(commands: Vec<String>) -> std::io::Result<()> {
-    if commands.is_empty() { return Ok(()); }
+    if commands.is_empty() {
+        return Ok(());
+    }
     let full_script = commands.join(" && ");
-    let status = Command::new("pkexec").arg("sh").arg("-c").arg(full_script).status()?;
-    if status.success() { Ok(()) } else { Err(std::io::Error::new(std::io::ErrorKind::Other, "Root failed")) }
+    let status = Command::new("pkexec")
+        .arg("sh")
+        .arg("-c")
+        .arg(full_script)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Root failed",
+        ))
+    }
 }
 
 // --- TCP 转发 ---
@@ -186,7 +242,8 @@ pub async fn start_udp_forward(
     let dst_socket_addr = format!("{}:{}", dst_addr, dst_port);
     let socket = Arc::new(UdpSocket::bind(&src_socket_addr).await?);
 
-    let clients: Arc<Mutex<HashMap<SocketAddr, (Arc<UdpSocket>, Instant)>>> = Arc::new(Mutex::new(HashMap::new()));
+    let clients: Arc<Mutex<HashMap<SocketAddr, (Arc<UdpSocket>, Instant)>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let mut buf = [0u8; 4096];
 
     loop {
@@ -200,11 +257,11 @@ pub async fn start_udp_forward(
                     } else {
                         let t = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
                         t.connect(&dst_socket_addr).await?;
-                        
+
                         let s_clone = socket.clone();
                         let t_clone = t.clone();
                         let mut stop_rx_clone = stop_rx.clone();
-                        
+
                         tokio::spawn(async move {
                             let mut b = [0u8; 4096];
                             loop {
@@ -251,10 +308,17 @@ mod tests {
                     tokio::spawn(async move {
                         let mut buf = vec![0u8; 4096];
                         loop {
-                            if let Ok(n) = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
-                                if n == 0 { break; }
-                                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, &buf[..n]).await;
-                            } else { break; }
+                            if let Ok(n) =
+                                tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await
+                            {
+                                if n == 0 {
+                                    break;
+                                }
+                                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, &buf[..n])
+                                    .await;
+                            } else {
+                                break;
+                            }
                         }
                     });
                 }
@@ -271,15 +335,20 @@ mod tests {
 
         let fwd = tokio::spawn(async move {
             start_tcp_forward(
-                "127.0.0.1".into(), forwarder_port,
-                "127.0.0.1".into(), echo_port,
+                "127.0.0.1".into(),
+                forwarder_port,
+                "127.0.0.1".into(),
+                echo_port,
                 stop_rx,
-            ).await
+            )
+            .await
         });
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let mut client = TcpStream::connect(format!("127.0.0.1:{}", forwarder_port)).await.unwrap();
+        let mut client = TcpStream::connect(format!("127.0.0.1:{}", forwarder_port))
+            .await
+            .unwrap();
         let msg = b"hello conduit";
         client.write_all(msg).await.unwrap();
 
@@ -312,16 +381,22 @@ mod tests {
 
         let fwd = tokio::spawn(async move {
             start_udp_forward(
-                "127.0.0.1".into(), fwd_port,
-                "127.0.0.1".into(), echo_port,
+                "127.0.0.1".into(),
+                fwd_port,
+                "127.0.0.1".into(),
+                echo_port,
                 stop_rx,
-            ).await
+            )
+            .await
         });
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        client.connect(format!("127.0.0.1:{}", fwd_port)).await.unwrap();
+        client
+            .connect(format!("127.0.0.1:{}", fwd_port))
+            .await
+            .unwrap();
         let msg = b"hello conduit udp";
         client.send(msg).await.unwrap();
 
@@ -341,11 +416,7 @@ mod tests {
         drop(listener);
 
         let fwd = tokio::spawn(async move {
-            start_tcp_forward(
-                "127.0.0.1".into(), port,
-                "127.0.0.1".into(), 9999,
-                stop_rx,
-            ).await
+            start_tcp_forward("127.0.0.1".into(), port, "127.0.0.1".into(), 9999, stop_rx).await
         });
 
         tokio::time::sleep(Duration::from_millis(100)).await;

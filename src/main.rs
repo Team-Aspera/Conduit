@@ -1,16 +1,19 @@
 mod network;
 
-use iced::widget::{button, column, container, row, text, text_input, vertical_space, pick_list, scrollable, checkbox, image};
-use iced::{Alignment, Application, Command, Element, Length, Settings, Theme, theme};
+use iced::futures::SinkExt;
 use iced::widget::image::Handle;
-use tokio::sync::watch;
-use uuid::Uuid;
+use iced::widget::{
+    button, checkbox, column, container, image, pick_list, row, scrollable, text, text_input,
+    vertical_space,
+};
+use iced::{Alignment, Application, Command, Element, Length, Settings, Theme, theme};
 use network::SystemReport;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fs;
 use std::path::PathBuf;
-use std::borrow::Cow;
-use iced::futures::SinkExt;
+use tokio::sync::watch;
+use uuid::Uuid;
 
 #[cfg(target_os = "linux")]
 use ksni;
@@ -72,7 +75,9 @@ impl Language {
             (Language::Chinese, "msg_starting") => "正在启动...",
             (Language::Chinese, "msg_stopped") => "已停止",
             (Language::Chinese, "msg_active_bang") => "活跃!",
-            (Language::Chinese, "about_desc") => "一个简单易用的网络工具，让开发板联网和端口转发变得更轻松。",
+            (Language::Chinese, "about_desc") => {
+                "一个简单易用的网络工具，让开发板联网和端口转发变得更轻松。"
+            }
             (Language::Chinese, "label_current_share") => "当前共享信息",
             (Language::Chinese, "label_active_iface") => "活跃接口",
             (Language::Chinese, "status_running") => "正在运行",
@@ -82,7 +87,7 @@ impl Language {
             (Language::Chinese, "label_close_behavior") => "关闭窗口行为",
             (Language::Chinese, "opt_minimize") => "最小化到系统托盘",
             (Language::Chinese, "opt_quit") => "直接退出程序 (清理规则)",
-            
+
             (Language::English, "nav_share") => "Network Share",
             (Language::English, "nav_forward") => "Port Forwarders",
             (Language::English, "nav_monitor") => "System Monitor",
@@ -119,7 +124,9 @@ impl Language {
             (Language::English, "msg_starting") => "Starting...",
             (Language::English, "msg_stopped") => "Stopped",
             (Language::English, "msg_active_bang") => "Active!",
-            (Language::English, "about_desc") => "A simple and easy-to-use network utility that makes dev-board networking and port forwarding a breeze.",
+            (Language::English, "about_desc") => {
+                "A simple and easy-to-use network utility that makes dev-board networking and port forwarding a breeze."
+            }
             (Language::English, "label_current_share") => "Current Share Info",
             (Language::English, "label_active_iface") => "Active Interface",
             (Language::English, "status_running") => "Running",
@@ -141,7 +148,9 @@ impl container::StyleSheet for SidebarStyle {
     type Style = Theme;
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(iced::Background::Color(iced::Color::from_rgb(0.96, 0.96, 0.98))),
+            background: Some(iced::Background::Color(iced::Color::from_rgb(
+                0.96, 0.96, 0.98,
+            ))),
             border: iced::Border {
                 width: 0.0,
                 ..Default::default()
@@ -158,7 +167,9 @@ impl container::StyleSheet for BadgeStyle {
     type Style = Theme;
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(iced::Background::Color(iced::Color::from_rgb(0.2, 0.5, 0.8))),
+            background: Some(iced::Background::Color(iced::Color::from_rgb(
+                0.2, 0.5, 0.8,
+            ))),
             border: iced::Border {
                 radius: 10.0.into(),
                 ..Default::default()
@@ -188,19 +199,23 @@ pub fn main() -> iced::Result {
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive("conduit=info".parse().unwrap())
                 .add_directive("wgpu=error".parse().unwrap())
-                .add_directive("naga=error".parse().unwrap())
+                .add_directive("naga=error".parse().unwrap()),
         )
         .init();
 
     ForwarderApp::run(Settings {
         fonts: vec![
-            include_bytes!("../assets/fonts/LXGWWenKaiLite-Regular.ttf").as_slice().into(),
-            include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf").as_slice().into(),
+            include_bytes!("../assets/fonts/LXGWWenKaiLite-Regular.ttf")
+                .as_slice()
+                .into(),
+            include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf")
+                .as_slice()
+                .into(),
         ],
         default_font: iced::Font::with_name("LXGW WenKai Lite"),
         window: iced::window::Settings {
             min_size: Some(iced::Size::new(800.0, 600.0)),
-            exit_on_close_request: false, 
+            exit_on_close_request: false,
             ..Default::default()
         },
         antialiasing: true,
@@ -257,9 +272,15 @@ struct ConduitTray {
 
 #[cfg(target_os = "linux")]
 impl ksni::Tray for ConduitTray {
-    fn id(&self) -> String { "conduit".into() }
-    fn icon_name(&self) -> String { "conduit".into() }
-    fn title(&self) -> String { "Conduit".into() }
+    fn id(&self) -> String {
+        "conduit".into()
+    }
+    fn icon_name(&self) -> String {
+        "conduit".into()
+    }
+    fn title(&self) -> String {
+        "Conduit".into()
+    }
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
             title: "Conduit".into(),
@@ -326,11 +347,11 @@ struct ForwarderApp {
     current_page: Page,
     language: Language,
     close_behavior: CloseBehavior,
-    
+
     // 资源与托盘
     logo_only: Handle,
     logo_full: Handle,
-    
+
     #[cfg(not(target_os = "linux"))]
     _tray_icon: Option<tray_icon::TrayIcon>,
 
@@ -398,10 +419,10 @@ impl Application for ForwarderApp {
             .into_iter()
             .filter(|i| {
                 let name = i.name.as_str();
-                name != "lo" && 
-                !name.starts_with("veth") && 
-                !name.starts_with("docker") && 
-                !name.starts_with("br-")
+                name != "lo"
+                    && !name.starts_with("veth")
+                    && !name.starts_with("docker")
+                    && !name.starts_with("br-")
             })
             .map(|i| i.name)
             .collect();
@@ -410,20 +431,30 @@ impl Application for ForwarderApp {
         let report = network::get_system_network_report();
         let cfg = AppConfig::load();
 
-        let logo_only = Handle::from_memory(include_bytes!("../assets/images/Conduit-logoonly.png").as_slice());
-        let logo_full = Handle::from_memory(include_bytes!("../assets/images/Conduit.png").as_slice());
+        let logo_only =
+            Handle::from_memory(include_bytes!("../assets/images/Conduit-logoonly.png").as_slice());
+        let logo_full =
+            Handle::from_memory(include_bytes!("../assets/images/Conduit.png").as_slice());
 
-        let port_forwarders: Vec<PortForwarder> = cfg.forwarders.iter().map(|fc| PortForwarder {
-            id: Uuid::new_v4(),
-            protocol: fc.protocol,
-            src_addr: fc.src_addr.clone(),
-            src_port: fc.src_port.clone(),
-            dst_addr: fc.dst_addr.clone(),
-            dst_port: fc.dst_port.clone(),
-            is_active: false,
-            status: Cow::Owned(format!("{} ({})", cfg.language.get("status_ready"), cfg.language.get("status_imported"))),
-            stop_tx: None,
-        }).collect();
+        let port_forwarders: Vec<PortForwarder> = cfg
+            .forwarders
+            .iter()
+            .map(|fc| PortForwarder {
+                id: Uuid::new_v4(),
+                protocol: fc.protocol,
+                src_addr: fc.src_addr.clone(),
+                src_port: fc.src_port.clone(),
+                dst_addr: fc.dst_addr.clone(),
+                dst_port: fc.dst_port.clone(),
+                is_active: false,
+                status: Cow::Owned(format!(
+                    "{} ({})",
+                    cfg.language.get("status_ready"),
+                    cfg.language.get("status_imported")
+                )),
+                stop_tx: None,
+            })
+            .collect();
 
         #[cfg(target_os = "linux")]
         {
@@ -434,7 +465,11 @@ impl Application for ForwarderApp {
             });
         }
 
-        let status_key = if sys_active { "status_active" } else { "status_ready" };
+        let status_key = if sys_active {
+            "status_active"
+        } else {
+            "status_ready"
+        };
 
         (
             Self {
@@ -460,7 +495,9 @@ impl Application for ForwarderApp {
         )
     }
 
-    fn title(&self) -> String { "Conduit".to_string() }
+    fn title(&self) -> String {
+        "Conduit".to_string()
+    }
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
@@ -470,13 +507,19 @@ impl Application for ForwarderApp {
             }
             Message::TrayClicked => {
                 tracing::info!("Tray clicked, restoring window...");
-                return iced::window::change_mode(iced::window::Id::MAIN, iced::window::Mode::Windowed);
+                return iced::window::change_mode(
+                    iced::window::Id::MAIN,
+                    iced::window::Mode::Windowed,
+                );
             }
             Message::CloseRequested => {
                 if self.close_behavior == CloseBehavior::Minimize {
                     tracing::info!("Minimizing to tray...");
                     return Command::batch(vec![
-                        iced::window::change_mode(iced::window::Id::MAIN, iced::window::Mode::Hidden),
+                        iced::window::change_mode(
+                            iced::window::Id::MAIN,
+                            iced::window::Mode::Hidden,
+                        ),
                         iced::window::minimize(iced::window::Id::MAIN, true),
                     ]);
                 }
@@ -489,9 +532,12 @@ impl Application for ForwarderApp {
                     if let Some(l) = lan {
                         let h = host_ip.clone();
                         let m = mask.clone();
-                        return Command::perform(async move {
-                            let _ = network::stop_system_forwarding(wans, &l, &h, &m);
-                        }, |_| Message::Exit);
+                        return Command::perform(
+                            async move {
+                                let _ = network::stop_system_forwarding(wans, &l, &h, &m);
+                            },
+                            |_| Message::Exit,
+                        );
                     }
                 }
                 return iced::window::close(iced::window::Id::MAIN);
@@ -502,7 +548,11 @@ impl Application for ForwarderApp {
             }
             Message::LanguageChanged(lang) => {
                 self.language = lang;
-                let status_key = if self.sys_active { "status_active" } else { "status_ready" };
+                let status_key = if self.sys_active {
+                    "status_active"
+                } else {
+                    "status_ready"
+                };
                 self.sys_status = self.language.get(status_key).into();
 
                 for f in &mut self.port_forwarders {
@@ -518,13 +568,23 @@ impl Application for ForwarderApp {
             }
             Message::SwitchPage(page) => self.current_page = page,
             Message::RefreshInterfaces => {
-                self.interfaces = network::get_interfaces().into_iter().filter(|i| {
-                    let n = &i.name;
-                    n != "lo" && !n.starts_with("veth") && !n.starts_with("docker") && !n.starts_with("br-")
-                }).map(|i| i.name).collect();
+                self.interfaces = network::get_interfaces()
+                    .into_iter()
+                    .filter(|i| {
+                        let n = &i.name;
+                        n != "lo"
+                            && !n.starts_with("veth")
+                            && !n.starts_with("docker")
+                            && !n.starts_with("br-")
+                    })
+                    .map(|i| i.name)
+                    .collect();
             }
             Message::RefreshSystemReport => {
-                return Command::perform(async { network::get_system_network_report() }, Message::SystemReportReceived);
+                return Command::perform(
+                    async { network::get_system_network_report() },
+                    Message::SystemReportReceived,
+                );
             }
             Message::SystemReportReceived(report) => {
                 self.system_report = Some(report);
@@ -541,13 +601,20 @@ impl Application for ForwarderApp {
                     if active && !wans.is_empty() {
                         self.selected_wans = wans;
                     }
-                    let status_key = if active { "status_active" } else { "status_ready" };
+                    let status_key = if active {
+                        "status_active"
+                    } else {
+                        "status_ready"
+                    };
                     self.sys_status = self.language.get(status_key).into();
                 }
             }
             Message::WanToggled(name, active) => {
-                if active { self.selected_wans.push(name); }
-                else { self.selected_wans.retain(|n| n != &name); }
+                if active {
+                    self.selected_wans.push(name);
+                } else {
+                    self.selected_wans.retain(|n| n != &name);
+                }
             }
             Message::LanSelected(name) => self.lan_interface = Some(name),
             Message::HostIpChanged(ip) => self.host_ip = ip,
@@ -560,82 +627,175 @@ impl Application for ForwarderApp {
                 let mask = self.subnet_mask.clone();
 
                 if let Some(l) = lan {
-                    if wans.is_empty() { self.sys_status = self.language.get("msg_select_wan").into(); return Command::none(); }
-                    self.sys_status = if active { self.language.get("msg_stopping").into() } else { self.language.get("msg_starting").into() };
+                    if wans.is_empty() {
+                        self.sys_status = self.language.get("msg_select_wan").into();
+                        return Command::none();
+                    }
+                    self.sys_status = if active {
+                        self.language.get("msg_stopping").into()
+                    } else {
+                        self.language.get("msg_starting").into()
+                    };
                     let h = host_ip.clone();
                     let m = mask.clone();
-                    return Command::perform(async move {
-                        let res = if active { network::stop_system_forwarding(wans, &l, &h, &m) } 
-                                 else { network::start_system_forwarding(wans, &l, &h, &m) };
-                        res.map_err(|e| e.to_string())
-                    }, move |res| Message::SysForwardingResult(!active, res));
-                } else { self.sys_status = self.language.get("msg_select_lan").into(); }
-            }
-            Message::SysForwardingResult(target, res) => {
-                match res {
-                    Ok(_) => { 
-                        self.sys_active = target; 
-                        self.sys_status = if target { self.language.get("msg_active_bang").into() } else { self.language.get("msg_stopped").into() }; 
-                    }
-                    Err(e) => {
-                        self.sys_status = format!("{}: {}", if self.language == Language::Chinese { "错误" } else { "Error" }, e).into();
-                    }
+                    return Command::perform(
+                        async move {
+                            let res = if active {
+                                network::stop_system_forwarding(wans, &l, &h, &m)
+                            } else {
+                                network::start_system_forwarding(wans, &l, &h, &m)
+                            };
+                            res.map_err(|e| e.to_string())
+                        },
+                        move |res| Message::SysForwardingResult(!active, res),
+                    );
+                } else {
+                    self.sys_status = self.language.get("msg_select_lan").into();
                 }
             }
+            Message::SysForwardingResult(target, res) => match res {
+                Ok(_) => {
+                    self.sys_active = target;
+                    self.sys_status = if target {
+                        self.language.get("msg_active_bang").into()
+                    } else {
+                        self.language.get("msg_stopped").into()
+                    };
+                }
+                Err(e) => {
+                    self.sys_status = format!(
+                        "{}: {}",
+                        if self.language == Language::Chinese {
+                            "错误"
+                        } else {
+                            "Error"
+                        },
+                        e
+                    )
+                    .into();
+                }
+            },
 
             Message::AddForwarder => {
                 self.port_forwarders.push(PortForwarder {
-                    id: Uuid::new_v4(), protocol: Protocol::TCP, src_addr: "0.0.0.0".to_string(), src_port: "".to_string(),
-                    dst_addr: "127.0.0.1".to_string(), dst_port: "".to_string(), is_active: false, status: self.language.get("status_ready").into(), stop_tx: None,
+                    id: Uuid::new_v4(),
+                    protocol: Protocol::TCP,
+                    src_addr: "0.0.0.0".to_string(),
+                    src_port: "".to_string(),
+                    dst_addr: "127.0.0.1".to_string(),
+                    dst_port: "".to_string(),
+                    is_active: false,
+                    status: self.language.get("status_ready").into(),
+                    stop_tx: None,
                 });
                 self.save_config();
             }
             Message::RemoveForwarder(id) => {
                 if let Some(pos) = self.port_forwarders.iter().position(|f| f.id == id) {
-                    if self.port_forwarders[pos].is_active { if let Some(tx) = self.port_forwarders[pos].stop_tx.take() { let _ = tx.send(true); } }
+                    if self.port_forwarders[pos].is_active {
+                        if let Some(tx) = self.port_forwarders[pos].stop_tx.take() {
+                            let _ = tx.send(true);
+                        }
+                    }
                     self.port_forwarders.remove(pos);
                 }
                 self.save_config();
             }
-            Message::SrcAddrChanged(id, addr) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_addr = addr; } self.save_config(); }
-            Message::SrcPortChanged(id, port) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.src_port = port; } self.save_config(); }
-            Message::DstAddrChanged(id, addr) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.dst_addr = addr; } self.save_config(); }
-            Message::DstPortChanged(id, port) => { if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) { f.dst_port = port; } self.save_config(); }
+            Message::SrcAddrChanged(id, addr) => {
+                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
+                    f.src_addr = addr;
+                }
+                self.save_config();
+            }
+            Message::SrcPortChanged(id, port) => {
+                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
+                    f.src_port = port;
+                }
+                self.save_config();
+            }
+            Message::DstAddrChanged(id, addr) => {
+                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
+                    f.dst_addr = addr;
+                }
+                self.save_config();
+            }
+            Message::DstPortChanged(id, port) => {
+                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
+                    f.dst_port = port;
+                }
+                self.save_config();
+            }
             Message::TogglePortForwarding(id) => {
                 if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
-                    if f.is_active { if let Some(tx) = f.stop_tx.take() { let _ = tx.send(true); } f.is_active = false; f.status = self.language.get("status_stopped").into(); } 
-                    else {
-                        if let (Ok(sp), Ok(dp)) = (f.src_port.parse::<u16>(), f.dst_port.parse::<u16>()) {
-                            let (tx, rx) = watch::channel(false); f.stop_tx = Some(tx); f.is_active = true; f.status = self.language.get("status_running").into();
-                            let s = f.src_addr.clone(); let d = f.dst_addr.clone(); let p = f.protocol;
-                            return Command::perform(async move {
-                                let res = if p == Protocol::TCP { network::start_tcp_forward(s, sp, d, dp, rx).await }
-                                         else { network::start_udp_forward(s, sp, d, dp, rx).await };
-                                res.map_err(|e| e.to_string())
-                            }, move |res| Message::PortForwardingResult(id, res));
-                        } else { f.status = self.language.get("status_invalid_port").into(); }
+                    if f.is_active {
+                        if let Some(tx) = f.stop_tx.take() {
+                            let _ = tx.send(true);
+                        }
+                        f.is_active = false;
+                        f.status = self.language.get("status_stopped").into();
+                    } else {
+                        if let (Ok(sp), Ok(dp)) =
+                            (f.src_port.parse::<u16>(), f.dst_port.parse::<u16>())
+                        {
+                            let (tx, rx) = watch::channel(false);
+                            f.stop_tx = Some(tx);
+                            f.is_active = true;
+                            f.status = self.language.get("status_running").into();
+                            let s = f.src_addr.clone();
+                            let d = f.dst_addr.clone();
+                            let p = f.protocol;
+                            return Command::perform(
+                                async move {
+                                    let res = if p == Protocol::TCP {
+                                        network::start_tcp_forward(s, sp, d, dp, rx).await
+                                    } else {
+                                        network::start_udp_forward(s, sp, d, dp, rx).await
+                                    };
+                                    res.map_err(|e| e.to_string())
+                                },
+                                move |res| Message::PortForwardingResult(id, res),
+                            );
+                        } else {
+                            f.status = self.language.get("status_invalid_port").into();
+                        }
                     }
                 }
             }
-            Message::PortForwardingResult(id, res) => if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
-                if let Err(e) = res { 
-                    f.is_active = false; 
-                    f.status = format!("{}: {}", if self.language == Language::Chinese { "错误" } else { "Error" }, e).into(); 
+            Message::PortForwardingResult(id, res) => {
+                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
+                    if let Err(e) = res {
+                        f.is_active = false;
+                        f.status = format!(
+                            "{}: {}",
+                            if self.language == Language::Chinese {
+                                "错误"
+                            } else {
+                                "Error"
+                            },
+                            e
+                        )
+                        .into();
+                    }
                 }
             }
             Message::ImportConfig => {
-                return Command::perform(async move {
-                    rfd::AsyncFileDialog::new()
-                        .add_filter("JSON", &["json"])
-                        .pick_file()
-                        .await
-                        .map(|f| f.path().to_path_buf())
-                }, Message::ConfigFileSelected);
+                return Command::perform(
+                    async move {
+                        rfd::AsyncFileDialog::new()
+                            .add_filter("JSON", &["json"])
+                            .pick_file()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    Message::ConfigFileSelected,
+                );
             }
             Message::ConfigFileSelected(path) => {
                 if let Some(p) = path {
                     if let Ok(content) = fs::read_to_string(p) {
-                        if let Ok(configs) = serde_json::from_str::<Vec<PortForwarderConfig>>(&content) {
+                        if let Ok(configs) =
+                            serde_json::from_str::<Vec<PortForwarderConfig>>(&content)
+                        {
                             for cfg in configs {
                                 self.port_forwarders.push(PortForwarder {
                                     id: Uuid::new_v4(),
@@ -645,7 +805,12 @@ impl Application for ForwarderApp {
                                     dst_addr: cfg.dst_addr,
                                     dst_port: cfg.dst_port,
                                     is_active: false,
-                                    status: format!("{} ({})", self.language.get("status_ready"), self.language.get("status_imported")).into(),
+                                    status: format!(
+                                        "{} ({})",
+                                        self.language.get("status_ready"),
+                                        self.language.get("status_imported")
+                                    )
+                                    .into(),
                                     stop_tx: None,
                                 });
                             }
@@ -654,24 +819,31 @@ impl Application for ForwarderApp {
                 }
             }
             Message::ExportConfig => {
-                return Command::perform(async move {
-                    rfd::AsyncFileDialog::new()
-                        .add_filter("JSON", &["json"])
-                        .set_file_name("config.json")
-                        .save_file()
-                        .await
-                        .map(|f| f.path().to_path_buf())
-                }, Message::ConfigFileToExportSelected);
+                return Command::perform(
+                    async move {
+                        rfd::AsyncFileDialog::new()
+                            .add_filter("JSON", &["json"])
+                            .set_file_name("config.json")
+                            .save_file()
+                            .await
+                            .map(|f| f.path().to_path_buf())
+                    },
+                    Message::ConfigFileToExportSelected,
+                );
             }
             Message::ConfigFileToExportSelected(path) => {
                 if let Some(p) = path {
-                    let configs: Vec<PortForwarderConfig> = self.port_forwarders.iter().map(|f| PortForwarderConfig {
-                        protocol: f.protocol,
-                        src_addr: f.src_addr.clone(),
-                        src_port: f.src_port.clone(),
-                        dst_addr: f.dst_addr.clone(),
-                        dst_port: f.dst_port.clone(),
-                    }).collect();
+                    let configs: Vec<PortForwarderConfig> = self
+                        .port_forwarders
+                        .iter()
+                        .map(|f| PortForwarderConfig {
+                            protocol: f.protocol,
+                            src_addr: f.src_addr.clone(),
+                            src_port: f.src_port.clone(),
+                            dst_addr: f.dst_addr.clone(),
+                            dst_port: f.dst_port.clone(),
+                        })
+                        .collect();
                     if let Ok(json) = serde_json::to_string_pretty(&configs) {
                         let _ = fs::write(p, json);
                     }
@@ -682,14 +854,13 @@ impl Application for ForwarderApp {
     }
 
     fn subscription(&self) -> iced::Subscription<Message> {
-        let mut subs: Vec<iced::Subscription<Message>> = vec![
-            iced::event::listen_with(|event, _status| match event {
+        let mut subs: Vec<iced::Subscription<Message>> =
+            vec![iced::event::listen_with(|event, _status| match event {
                 iced::Event::Window(_, iced::window::Event::CloseRequested) => {
                     Some(Message::CloseRequested)
                 }
                 _ => None,
-            }),
-        ];
+            })];
 
         #[cfg(target_os = "linux")]
         subs.push(iced::subscription::channel(
@@ -707,11 +878,14 @@ impl Application for ForwarderApp {
                 }
             },
         ));
-        
+
         if self.current_page == Page::SystemMonitor {
-            subs.push(iced::time::every(std::time::Duration::from_secs(self.refresh_interval)).map(|_| Message::RefreshSystemReport));
+            subs.push(
+                iced::time::every(std::time::Duration::from_secs(self.refresh_interval))
+                    .map(|_| Message::RefreshSystemReport),
+            );
         }
-        
+
         iced::Subscription::batch(subs)
     }
 
@@ -722,90 +896,167 @@ impl Application for ForwarderApp {
             let is_selected = page == current_page;
             button(
                 row![
-                    text(icon).size(16).shaping(iced::widget::text::Shaping::Advanced),
+                    text(icon)
+                        .size(16)
+                        .shaping(iced::widget::text::Shaping::Advanced),
                     text(label).size(14),
                 ]
                 .spacing(10)
-                .align_items(Alignment::Center)
+                .align_items(Alignment::Center),
             )
             .width(Length::Fill)
             .padding(12)
             .on_press(Message::SwitchPage(page))
-            .style(if is_selected { theme::Button::Primary } else { theme::Button::Text })
+            .style(if is_selected {
+                theme::Button::Primary
+            } else {
+                theme::Button::Text
+            })
         };
 
         let sidebar = container(
             column![
-                container(image(self.logo_only.clone()).width(50)).width(Length::Fill).center_x(),
+                container(image(self.logo_only.clone()).width(50))
+                    .width(Length::Fill)
+                    .center_x(),
                 vertical_space().height(30),
-                sidebar_button(lang.get("nav_share"), "🌐", Page::SystemForward, self.current_page),
-                sidebar_button(lang.get("nav_forward"), "🔌", Page::PortForward, self.current_page),
-                sidebar_button(lang.get("nav_monitor"), "📊", Page::SystemMonitor, self.current_page),
-                sidebar_button(lang.get("nav_settings"), "⚙️", Page::Settings, self.current_page),
+                sidebar_button(
+                    lang.get("nav_share"),
+                    "🌐",
+                    Page::SystemForward,
+                    self.current_page
+                ),
+                sidebar_button(
+                    lang.get("nav_forward"),
+                    "🔌",
+                    Page::PortForward,
+                    self.current_page
+                ),
+                sidebar_button(
+                    lang.get("nav_monitor"),
+                    "📊",
+                    Page::SystemMonitor,
+                    self.current_page
+                ),
+                sidebar_button(
+                    lang.get("nav_settings"),
+                    "⚙️",
+                    Page::Settings,
+                    self.current_page
+                ),
                 sidebar_button(lang.get("nav_about"), "ℹ️", Page::About, self.current_page),
                 vertical_space().height(Length::Fill),
                 row![
-                    button("中").on_press(Message::LanguageChanged(Language::Chinese)).style(if self.language == Language::Chinese { theme::Button::Primary } else { theme::Button::Secondary }).padding(5),
-                    button("EN").on_press(Message::LanguageChanged(Language::English)).style(if self.language == Language::English { theme::Button::Primary } else { theme::Button::Secondary }).padding(5),
-                ].spacing(5).align_items(Alignment::Center)
+                    button("中")
+                        .on_press(Message::LanguageChanged(Language::Chinese))
+                        .style(if self.language == Language::Chinese {
+                            theme::Button::Primary
+                        } else {
+                            theme::Button::Secondary
+                        })
+                        .padding(5),
+                    button("EN")
+                        .on_press(Message::LanguageChanged(Language::English))
+                        .style(if self.language == Language::English {
+                            theme::Button::Primary
+                        } else {
+                            theme::Button::Secondary
+                        })
+                        .padding(5),
+                ]
+                .spacing(5)
+                .align_items(Alignment::Center)
             ]
             .spacing(10)
-            .padding(20)
+            .padding(20),
         )
         .width(200)
         .height(Length::Fill)
         .style(theme::Container::Custom(Box::new(SidebarStyle)));
 
         let content_area: Element<Message> = match self.current_page {
-            Page::Settings => {
-                column![
-                    text(lang.get("title_settings")).size(28),
-                    vertical_space().height(20),
-                    container(column![
-                        text(lang.get("label_close_behavior")).size(16).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
-                        row![
-                            button(lang.get("opt_minimize")).on_press(Message::SetCloseBehavior(CloseBehavior::Minimize)).style(if self.close_behavior == CloseBehavior::Minimize { theme::Button::Primary } else { theme::Button::Secondary }).padding(10),
-                            button(lang.get("opt_quit")).on_press(Message::SetCloseBehavior(CloseBehavior::Quit)).style(if self.close_behavior == CloseBehavior::Quit { theme::Button::Primary } else { theme::Button::Secondary }).padding(10),
-                        ].spacing(10)
-                    ].spacing(15)).padding(20).style(theme::Container::Box),
-                ].spacing(20).max_width(600).into()
-            }
-            Page::About => {
+            Page::Settings => column![
+                text(lang.get("title_settings")).size(28),
+                vertical_space().height(20),
                 container(
                     column![
-                        image(self.logo_full.clone()).width(250),
-                        text(format!("v{}", env!("CARGO_PKG_VERSION"))).size(14).style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))),
-                        vertical_space().height(20),
-                        text(lang.get("about_desc")).size(16),
-                        vertical_space().height(30),
-                        text("GitHub: github.com/xjimlinx/Conduit").size(12),
-                        text("Built with Iced & Tokio").size(12).style(theme::Text::Color(iced::Color::from_rgb(0.6, 0.6, 0.6))),
+                        text(lang.get("label_close_behavior"))
+                            .size(16)
+                            .style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                        row![
+                            button(lang.get("opt_minimize"))
+                                .on_press(Message::SetCloseBehavior(CloseBehavior::Minimize))
+                                .style(if self.close_behavior == CloseBehavior::Minimize {
+                                    theme::Button::Primary
+                                } else {
+                                    theme::Button::Secondary
+                                })
+                                .padding(10),
+                            button(lang.get("opt_quit"))
+                                .on_press(Message::SetCloseBehavior(CloseBehavior::Quit))
+                                .style(if self.close_behavior == CloseBehavior::Quit {
+                                    theme::Button::Primary
+                                } else {
+                                    theme::Button::Secondary
+                                })
+                                .padding(10),
+                        ]
+                        .spacing(10)
                     ]
-                    .spacing(10)
-                    .align_items(Alignment::Center)
+                    .spacing(15)
                 )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x()
-                .center_y()
-                .into()
-            }
+                .padding(20)
+                .style(theme::Container::Box),
+            ]
+            .spacing(20)
+            .max_width(600)
+            .into(),
+            Page::About => container(
+                column![
+                    image(self.logo_full.clone()).width(250),
+                    text(format!("v{}", env!("CARGO_PKG_VERSION")))
+                        .size(14)
+                        .style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))),
+                    vertical_space().height(20),
+                    text(lang.get("about_desc")).size(16),
+                    vertical_space().height(30),
+                    text("GitHub: github.com/xjimlinx/Conduit").size(12),
+                    text("Built with Iced & Tokio")
+                        .size(12)
+                        .style(theme::Text::Color(iced::Color::from_rgb(0.6, 0.6, 0.6))),
+                ]
+                .spacing(10)
+                .align_items(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into(),
             Page::SystemMonitor => {
                 if let Some(report) = &self.system_report {
                     let section_card = |title: String, items: &Vec<String>| {
                         let content: Element<Message> = if items.is_empty() {
-                            text("No active data").size(12).style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))).into()
+                            text("No active data")
+                                .size(12)
+                                .style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5)))
+                                .into()
                         } else {
-                            let elements: Vec<Element<Message>> = items.iter().map(|i| 
-                                container(text(i).size(11).font(iced::Font::MONOSPACE))
-                                    .padding([2, 5])
-                                    .into()
-                            ).collect();
+                            let elements: Vec<Element<Message>> = items
+                                .iter()
+                                .map(|i| {
+                                    container(text(i).size(11).font(iced::Font::MONOSPACE))
+                                        .padding([2, 5])
+                                        .into()
+                                })
+                                .collect();
                             column(elements).spacing(4).into()
                         };
 
                         let card: Element<Message> = container(column![
-                            text(title).size(16).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                            text(title)
+                                .size(16)
+                                .style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
                             vertical_space().height(8),
                             content
                         ])
@@ -813,7 +1064,7 @@ impl Application for ForwarderApp {
                         .padding(15)
                         .style(theme::Container::Box)
                         .into();
-                        
+
                         card
                     };
 
@@ -822,31 +1073,91 @@ impl Application for ForwarderApp {
                             text(lang.get("title_monitor")).size(28),
                             iced::widget::horizontal_space().width(Length::Fill),
                             row![
-                                text(format!("{} {}s", if lang.get("nav_share") == "网络共享" { "刷新频率:" } else { "Interval:" }, self.refresh_interval)).size(12),
-                                button("1s").on_press(Message::SetRefreshInterval(1)).style(if self.refresh_interval == 1 { theme::Button::Primary } else { theme::Button::Secondary }),
-                                button("5s").on_press(Message::SetRefreshInterval(5)).style(if self.refresh_interval == 5 { theme::Button::Primary } else { theme::Button::Secondary }),
-                                button("10s").on_press(Message::SetRefreshInterval(10)).style(if self.refresh_interval == 10 { theme::Button::Primary } else { theme::Button::Secondary }),
-                            ].spacing(5).align_items(Alignment::Center),
+                                text(format!(
+                                    "{} {}s",
+                                    if lang.get("nav_share") == "网络共享" {
+                                        "刷新频率:"
+                                    } else {
+                                        "Interval:"
+                                    },
+                                    self.refresh_interval
+                                ))
+                                .size(12),
+                                button("1s").on_press(Message::SetRefreshInterval(1)).style(
+                                    if self.refresh_interval == 1 {
+                                        theme::Button::Primary
+                                    } else {
+                                        theme::Button::Secondary
+                                    }
+                                ),
+                                button("5s").on_press(Message::SetRefreshInterval(5)).style(
+                                    if self.refresh_interval == 5 {
+                                        theme::Button::Primary
+                                    } else {
+                                        theme::Button::Secondary
+                                    }
+                                ),
+                                button("10s")
+                                    .on_press(Message::SetRefreshInterval(10))
+                                    .style(if self.refresh_interval == 10 {
+                                        theme::Button::Primary
+                                    } else {
+                                        theme::Button::Secondary
+                                    }),
+                            ]
+                            .spacing(5)
+                            .align_items(Alignment::Center),
                             button(lang.get("btn_refresh")).on_press(Message::RefreshSystemReport),
-                        ].spacing(15).align_items(Alignment::Center),
-                        
-                        container(row![
-                            text(lang.get("label_ip_forward")).size(16),
-                            iced::widget::horizontal_space().width(10),
-                            text(if report.ip_forward_enabled { lang.get("label_enabled") } else { lang.get("label_disabled") })
+                        ]
+                        .spacing(15)
+                        .align_items(Alignment::Center),
+                        container(
+                            row![
+                                text(lang.get("label_ip_forward")).size(16),
+                                iced::widget::horizontal_space().width(10),
+                                text(if report.ip_forward_enabled {
+                                    lang.get("label_enabled")
+                                } else {
+                                    lang.get("label_disabled")
+                                })
                                 .size(14)
-                                .style(theme::Text::Color(if report.ip_forward_enabled { iced::Color::from_rgb(0.2, 0.6, 0.2) } else { iced::Color::from_rgb(0.7, 0.2, 0.2) }))
-                        ].align_items(Alignment::Center))
+                                .style(theme::Text::Color(
+                                    if report.ip_forward_enabled {
+                                        iced::Color::from_rgb(0.2, 0.6, 0.2)
+                                    } else {
+                                        iced::Color::from_rgb(0.7, 0.2, 0.2)
+                                    }
+                                ))
+                            ]
+                            .align_items(Alignment::Center)
+                        )
                         .padding(10)
                         .style(theme::Container::Box),
-
-                        scrollable(column![
-                            section_card(lang.get("monitor_active_flows").to_string(), &report.active_connections),
-                            section_card(lang.get("monitor_nat_rules").to_string(), &report.nat_masquerade),
-                            section_card(lang.get("monitor_port_rules").to_string(), &report.port_forwards),
-                            section_card(lang.get("monitor_listen_ports").to_string(), &report.listening_ports),
-                        ].spacing(20)).height(Length::Fill),
-                    ].spacing(20).into()
+                        scrollable(
+                            column![
+                                section_card(
+                                    lang.get("monitor_active_flows").to_string(),
+                                    &report.active_connections
+                                ),
+                                section_card(
+                                    lang.get("monitor_nat_rules").to_string(),
+                                    &report.nat_masquerade
+                                ),
+                                section_card(
+                                    lang.get("monitor_port_rules").to_string(),
+                                    &report.port_forwards
+                                ),
+                                section_card(
+                                    lang.get("monitor_listen_ports").to_string(),
+                                    &report.listening_ports
+                                ),
+                            ]
+                            .spacing(20)
+                        )
+                        .height(Length::Fill),
+                    ]
+                    .spacing(20)
+                    .into()
                 } else {
                     container(text("Loading System Report...").size(20))
                         .width(Length::Fill)
@@ -857,93 +1168,237 @@ impl Application for ForwarderApp {
                 }
             }
             Page::SystemForward => {
-                let wan_list = self.interfaces.iter().filter(|iface| Some((*iface).clone()) != self.lan_interface).fold(column![].spacing(5), |col, iface| {
-                    col.push(checkbox(iface, self.selected_wans.contains(iface)).on_toggle(move |a| Message::WanToggled(iface.clone(), a)))
-                });
+                let wan_list = self
+                    .interfaces
+                    .iter()
+                    .filter(|iface| Some((*iface).clone()) != self.lan_interface)
+                    .fold(column![].spacing(5), |col, iface| {
+                        col.push(
+                            checkbox(iface, self.selected_wans.contains(iface))
+                                .on_toggle(move |a| Message::WanToggled(iface.clone(), a)),
+                        )
+                    });
 
-                container(column![
-                    text(lang.get("title_share")).size(28),
-                    vertical_space().height(10),
-                    container(column![
-                        text(lang.get("label_wan")).size(16).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
-                        scrollable(wan_list).height(120),
-                    ].spacing(10)).padding(15).style(theme::Container::Box),
-                    
-                    container(column![
-                        row![text(lang.get("label_lan")).width(120), pick_list(&self.interfaces[..], self.lan_interface.clone(), Message::LanSelected).width(Length::Fill)].spacing(10).align_items(Alignment::Center),
-                        row![text(lang.get("label_lan_ip")).width(120), text_input("192.168.10.1", &self.host_ip).on_input(Message::HostIpChanged), text("/"), text_input("24", &self.subnet_mask).on_input(Message::SubnetMaskChanged).width(50)].spacing(10).align_items(Alignment::Center),
-                    ].spacing(15)).padding(15).style(theme::Container::Box),
-
-                    row![
-                        button(if self.sys_active { lang.get("btn_stop_share") } else { lang.get("btn_start_share") }).on_press(Message::ToggleSysForwarding).width(Length::Fill).padding(12).style(if self.sys_active { theme::Button::Destructive } else { theme::Button::Primary }),
-                        button(lang.get("btn_detect")).on_press(Message::DetectSystemForward).padding(12),
-                    ].spacing(10),
-
-                    if self.sys_active {
-                        let info: Element<Message> = container(column![
-                            text(lang.get("label_current_share")).size(16).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
-                            row![
-                                text(format!("{}: ", lang.get("label_active_iface"))).size(14),
-                                container(text(self.lan_interface.clone().unwrap_or_default()).size(12))
-                                    .padding([2, 8])
-                                    .style(theme::Container::Custom(Box::new(BadgeStyle))),
-                                iced::widget::horizontal_space().width(20),
-                                text(format!("{}: ", lang.get("label_lan_ip"))).size(14),
-                                text(&self.host_ip).size(14).font(iced::Font::MONOSPACE).style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.6, 0.2))),
-                            ].align_items(Alignment::Center)
-                        ].spacing(10))
+                container(
+                    column![
+                        text(lang.get("title_share")).size(28),
+                        vertical_space().height(10),
+                        container(
+                            column![
+                                text(lang.get("label_wan"))
+                                    .size(16)
+                                    .style(theme::Text::Color(iced::Color::from_rgb(
+                                        0.2, 0.4, 0.7
+                                    ))),
+                                scrollable(wan_list).height(120),
+                            ]
+                            .spacing(10)
+                        )
                         .padding(15)
-                        .style(theme::Container::Box)
-                        .into();
-                        info
-                    } else {
-                        iced::widget::vertical_space().height(0).into()
-                    },
-                    
-                    container(row![
-                        text("🔔").size(14).shaping(iced::widget::text::Shaping::Advanced),
-                        text(&self.sys_status).size(13),
-                    ].spacing(10).align_items(Alignment::Center)).padding(10).style(theme::Container::Box),
-                    
-                    button(lang.get("btn_refresh_iface")).on_press(Message::RefreshInterfaces).style(theme::Button::Secondary),
-                ].spacing(20).max_width(600))
+                        .style(theme::Container::Box),
+                        container(
+                            column![
+                                row![
+                                    text(lang.get("label_lan")).width(120),
+                                    pick_list(
+                                        &self.interfaces[..],
+                                        self.lan_interface.clone(),
+                                        Message::LanSelected
+                                    )
+                                    .width(Length::Fill)
+                                ]
+                                .spacing(10)
+                                .align_items(Alignment::Center),
+                                row![
+                                    text(lang.get("label_lan_ip")).width(120),
+                                    text_input("192.168.10.1", &self.host_ip)
+                                        .on_input(Message::HostIpChanged),
+                                    text("/"),
+                                    text_input("24", &self.subnet_mask)
+                                        .on_input(Message::SubnetMaskChanged)
+                                        .width(50)
+                                ]
+                                .spacing(10)
+                                .align_items(Alignment::Center),
+                            ]
+                            .spacing(15)
+                        )
+                        .padding(15)
+                        .style(theme::Container::Box),
+                        row![
+                            button(if self.sys_active {
+                                lang.get("btn_stop_share")
+                            } else {
+                                lang.get("btn_start_share")
+                            })
+                            .on_press(Message::ToggleSysForwarding)
+                            .width(Length::Fill)
+                            .padding(12)
+                            .style(if self.sys_active {
+                                theme::Button::Destructive
+                            } else {
+                                theme::Button::Primary
+                            }),
+                            button(lang.get("btn_detect"))
+                                .on_press(Message::DetectSystemForward)
+                                .padding(12),
+                        ]
+                        .spacing(10),
+                        if self.sys_active {
+                            let info: Element<Message> = container(
+                                column![
+                                    text(lang.get("label_current_share")).size(16).style(
+                                        theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))
+                                    ),
+                                    row![
+                                        text(format!("{}: ", lang.get("label_active_iface")))
+                                            .size(14),
+                                        container(
+                                            text(self.lan_interface.clone().unwrap_or_default())
+                                                .size(12)
+                                        )
+                                        .padding([2, 8])
+                                        .style(theme::Container::Custom(Box::new(BadgeStyle))),
+                                        iced::widget::horizontal_space().width(20),
+                                        text(format!("{}: ", lang.get("label_lan_ip"))).size(14),
+                                        text(&self.host_ip)
+                                            .size(14)
+                                            .font(iced::Font::MONOSPACE)
+                                            .style(theme::Text::Color(iced::Color::from_rgb(
+                                                0.2, 0.6, 0.2
+                                            ))),
+                                    ]
+                                    .align_items(Alignment::Center)
+                                ]
+                                .spacing(10),
+                            )
+                            .padding(15)
+                            .style(theme::Container::Box)
+                            .into();
+                            info
+                        } else {
+                            iced::widget::vertical_space().height(0).into()
+                        },
+                        container(
+                            row![
+                                text("🔔")
+                                    .size(14)
+                                    .shaping(iced::widget::text::Shaping::Advanced),
+                                text(&self.sys_status).size(13),
+                            ]
+                            .spacing(10)
+                            .align_items(Alignment::Center)
+                        )
+                        .padding(10)
+                        .style(theme::Container::Box),
+                        button(lang.get("btn_refresh_iface"))
+                            .on_press(Message::RefreshInterfaces)
+                            .style(theme::Button::Secondary),
+                    ]
+                    .spacing(20)
+                    .max_width(600),
+                )
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
             }
             Page::PortForward => {
-                let list = self.port_forwarders.iter().fold(column![].spacing(15), |col, f| {
-                    col.push(container(column![
-                        row![
-                            container(text(f.protocol.to_string()).size(12))
-                                .padding([2, 8])
-                                .style(theme::Container::Custom(Box::new(BadgeStyle))),
-                            text_input("Src IP", &f.src_addr).on_input(move |v| Message::SrcAddrChanged(f.id, v)).width(Length::Fill),
-                            text(":"),
-                            text_input("Port", &f.src_port).on_input(move |v| Message::SrcPortChanged(f.id, v)).width(70),
-                            text(" ➔ ").size(18).shaping(iced::widget::text::Shaping::Advanced),
-                            text_input("Dst IP", &f.dst_addr).on_input(move |v| Message::DstAddrChanged(f.id, v)).width(Length::Fill),
-                            text(":"),
-                            text_input("Port", &f.dst_port).on_input(move |v| Message::DstPortChanged(f.id, v)).width(70)
-                        ].spacing(10).align_items(Alignment::Center),
-                        row![
-                            text(format!("● {}", &f.status)).size(12).style(theme::Text::Color(if f.is_active { iced::Color::from_rgb(0.2, 0.7, 0.2) } else { iced::Color::from_rgb(0.6, 0.6, 0.6) })).width(Length::Fill),
-                            button(if f.is_active { text("⏹ Stop").shaping(iced::widget::text::Shaping::Advanced) } else { text("▶ Start").shaping(iced::widget::text::Shaping::Advanced) }).on_press(Message::TogglePortForwarding(f.id)).style(if f.is_active { theme::Button::Destructive } else { theme::Button::Primary }).padding([5, 15]),
-                            button(text("🗑").shaping(iced::widget::text::Shaping::Advanced)).on_press(Message::RemoveForwarder(f.id)).style(theme::Button::Secondary).padding([5, 10])
-                        ].spacing(10).align_items(Alignment::Center)
-                    ].spacing(10).padding(15)).style(theme::Container::Box))
-                });
+                let list = self
+                    .port_forwarders
+                    .iter()
+                    .fold(column![].spacing(15), |col, f| {
+                        col.push(
+                            container(
+                                column![
+                                    row![
+                                        container(text(f.protocol.to_string()).size(12))
+                                            .padding([2, 8])
+                                            .style(theme::Container::Custom(Box::new(BadgeStyle))),
+                                        text_input("Src IP", &f.src_addr)
+                                            .on_input(move |v| Message::SrcAddrChanged(f.id, v))
+                                            .width(Length::Fill),
+                                        text(":"),
+                                        text_input("Port", &f.src_port)
+                                            .on_input(move |v| Message::SrcPortChanged(f.id, v))
+                                            .width(70),
+                                        text(" ➔ ")
+                                            .size(18)
+                                            .shaping(iced::widget::text::Shaping::Advanced),
+                                        text_input("Dst IP", &f.dst_addr)
+                                            .on_input(move |v| Message::DstAddrChanged(f.id, v))
+                                            .width(Length::Fill),
+                                        text(":"),
+                                        text_input("Port", &f.dst_port)
+                                            .on_input(move |v| Message::DstPortChanged(f.id, v))
+                                            .width(70)
+                                    ]
+                                    .spacing(10)
+                                    .align_items(Alignment::Center),
+                                    row![
+                                        text(format!("● {}", &f.status))
+                                            .size(12)
+                                            .style(theme::Text::Color(if f.is_active {
+                                                iced::Color::from_rgb(0.2, 0.7, 0.2)
+                                            } else {
+                                                iced::Color::from_rgb(0.6, 0.6, 0.6)
+                                            }))
+                                            .width(Length::Fill),
+                                        button(if f.is_active {
+                                            text("⏹ Stop")
+                                                .shaping(iced::widget::text::Shaping::Advanced)
+                                        } else {
+                                            text("▶ Start")
+                                                .shaping(iced::widget::text::Shaping::Advanced)
+                                        })
+                                        .on_press(Message::TogglePortForwarding(f.id))
+                                        .style(if f.is_active {
+                                            theme::Button::Destructive
+                                        } else {
+                                            theme::Button::Primary
+                                        })
+                                        .padding([5, 15]),
+                                        button(
+                                            text("🗑")
+                                                .shaping(iced::widget::text::Shaping::Advanced)
+                                        )
+                                        .on_press(Message::RemoveForwarder(f.id))
+                                        .style(theme::Button::Secondary)
+                                        .padding([5, 10])
+                                    ]
+                                    .spacing(10)
+                                    .align_items(Alignment::Center)
+                                ]
+                                .spacing(10)
+                                .padding(15),
+                            )
+                            .style(theme::Container::Box),
+                        )
+                    });
 
                 column![
                     row![
-                        text(lang.get("title_forward")).size(28), 
-                        iced::widget::horizontal_space().width(Length::Fill), 
-                        button(text(format!("➕ {}", lang.get("btn_add_new"))).shaping(iced::widget::text::Shaping::Advanced)).on_press(Message::AddForwarder).style(theme::Button::Primary).padding(10),
-                        button(lang.get("btn_import")).on_press(Message::ImportConfig).padding(10),
-                        button(lang.get("btn_export")).on_press(Message::ExportConfig).padding(10),
-                    ].spacing(10).align_items(Alignment::Center), 
+                        text(lang.get("title_forward")).size(28),
+                        iced::widget::horizontal_space().width(Length::Fill),
+                        button(
+                            text(format!("➕ {}", lang.get("btn_add_new")))
+                                .shaping(iced::widget::text::Shaping::Advanced)
+                        )
+                        .on_press(Message::AddForwarder)
+                        .style(theme::Button::Primary)
+                        .padding(10),
+                        button(lang.get("btn_import"))
+                            .on_press(Message::ImportConfig)
+                            .padding(10),
+                        button(lang.get("btn_export"))
+                            .on_press(Message::ExportConfig)
+                            .padding(10),
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center),
                     scrollable(list).height(Length::Fill)
-                ].spacing(20).into()
+                ]
+                .spacing(20)
+                .into()
             }
         };
 
@@ -954,7 +1409,8 @@ impl Application for ForwarderApp {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .style(theme::Container::Custom(Box::new(ContentStyle)))
-        ].into()
+        ]
+        .into()
     }
 }
 
@@ -963,13 +1419,17 @@ impl ForwarderApp {
         let cfg = AppConfig {
             language: self.language,
             close_behavior: self.close_behavior,
-            forwarders: self.port_forwarders.iter().map(|f| PortForwarderConfig {
-                protocol: f.protocol,
-                src_addr: f.src_addr.clone(),
-                src_port: f.src_port.clone(),
-                dst_addr: f.dst_addr.clone(),
-                dst_port: f.dst_port.clone(),
-            }).collect(),
+            forwarders: self
+                .port_forwarders
+                .iter()
+                .map(|f| PortForwarderConfig {
+                    protocol: f.protocol,
+                    src_addr: f.src_addr.clone(),
+                    src_port: f.src_port.clone(),
+                    dst_addr: f.dst_addr.clone(),
+                    dst_port: f.dst_port.clone(),
+                })
+                .collect(),
         };
         cfg.save();
     }
@@ -982,18 +1442,52 @@ mod tests {
     #[test]
     fn test_language_all_keys_non_empty() {
         let keys = [
-            "nav_share", "nav_forward", "nav_monitor", "nav_about", "nav_settings",
-            "title_share", "title_forward", "title_monitor", "title_settings",
-            "label_wan", "label_lan", "label_lan_ip",
-            "btn_start_share", "btn_stop_share", "btn_detect", "btn_refresh_iface",
-            "btn_refresh", "btn_add_new", "btn_import", "btn_export",
-            "status_ready", "status_active", "label_ip_forward", "label_enabled", "label_disabled",
-            "monitor_active_flows", "monitor_nat_rules", "monitor_port_rules", "monitor_listen_ports",
-            "msg_det_failed", "msg_select_wan", "msg_select_lan",
-            "msg_stopping", "msg_starting", "msg_stopped", "msg_active_bang",
-            "about_desc", "label_current_share", "label_active_iface",
-            "status_running", "status_invalid_port", "status_stopped", "status_imported",
-            "label_close_behavior", "opt_minimize", "opt_quit",
+            "nav_share",
+            "nav_forward",
+            "nav_monitor",
+            "nav_about",
+            "nav_settings",
+            "title_share",
+            "title_forward",
+            "title_monitor",
+            "title_settings",
+            "label_wan",
+            "label_lan",
+            "label_lan_ip",
+            "btn_start_share",
+            "btn_stop_share",
+            "btn_detect",
+            "btn_refresh_iface",
+            "btn_refresh",
+            "btn_add_new",
+            "btn_import",
+            "btn_export",
+            "status_ready",
+            "status_active",
+            "label_ip_forward",
+            "label_enabled",
+            "label_disabled",
+            "monitor_active_flows",
+            "monitor_nat_rules",
+            "monitor_port_rules",
+            "monitor_listen_ports",
+            "msg_det_failed",
+            "msg_select_wan",
+            "msg_select_lan",
+            "msg_stopping",
+            "msg_starting",
+            "msg_stopped",
+            "msg_active_bang",
+            "about_desc",
+            "label_current_share",
+            "label_active_iface",
+            "status_running",
+            "status_invalid_port",
+            "status_stopped",
+            "status_imported",
+            "label_close_behavior",
+            "opt_minimize",
+            "opt_quit",
         ];
         for lang in [Language::Chinese, Language::English] {
             for key in &keys {
@@ -1018,7 +1512,10 @@ mod tests {
 
     #[test]
     fn test_close_behavior_serde() {
-        let cases = [(CloseBehavior::Minimize, "\"Minimize\""), (CloseBehavior::Quit, "\"Quit\"")];
+        let cases = [
+            (CloseBehavior::Minimize, "\"Minimize\""),
+            (CloseBehavior::Quit, "\"Quit\""),
+        ];
         for (val, expected_json) in &cases {
             let json = serde_json::to_string(val).unwrap();
             assert_eq!(json, *expected_json);
@@ -1048,8 +1545,20 @@ mod tests {
     #[test]
     fn test_port_forwarder_config_list_serde() {
         let configs = vec![
-            PortForwarderConfig { protocol: Protocol::TCP, src_addr: "0.0.0.0".into(), src_port: "8080".into(), dst_addr: "10.0.0.1".into(), dst_port: "80".into() },
-            PortForwarderConfig { protocol: Protocol::UDP, src_addr: "0.0.0.0".into(), src_port: "5353".into(), dst_addr: "10.0.0.1".into(), dst_port: "53".into() },
+            PortForwarderConfig {
+                protocol: Protocol::TCP,
+                src_addr: "0.0.0.0".into(),
+                src_port: "8080".into(),
+                dst_addr: "10.0.0.1".into(),
+                dst_port: "80".into(),
+            },
+            PortForwarderConfig {
+                protocol: Protocol::UDP,
+                src_addr: "0.0.0.0".into(),
+                src_port: "5353".into(),
+                dst_addr: "10.0.0.1".into(),
+                dst_port: "53".into(),
+            },
         ];
         let json = serde_json::to_string_pretty(&configs).unwrap();
         let back: Vec<PortForwarderConfig> = serde_json::from_str(&json).unwrap();
@@ -1194,8 +1703,10 @@ mod tests {
         // Empty port → should set status to "Invalid port"
         let _cmd = app.update(Message::TogglePortForwarding(fwd_id));
         assert!(!app.port_forwarders[0].is_active);
-        assert!(app.port_forwarders[0].status.contains("无效端口")
-            || app.port_forwarders[0].status.contains("Invalid port"));
+        assert!(
+            app.port_forwarders[0].status.contains("无效端口")
+                || app.port_forwarders[0].status.contains("Invalid port")
+        );
     }
 
     #[tokio::test]
