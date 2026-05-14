@@ -107,12 +107,11 @@ pub fn detect_system_forward_status() -> (bool, Vec<String>, bool) {
 // --- 系统转发控制 ---
 
 pub fn start_system_forwarding(
-    wan_ifs: &[String],
-    lan_shares: &[(String, String, String)],
+    lan_shares: &[(String, String, String, Vec<String>)],
 ) -> std::io::Result<()> {
     let mut commands = Vec::new();
     commands.push("echo 1 > /proc/sys/net/ipv4/ip_forward".to_string());
-    for (lan_if, host_ip, mask) in lan_shares {
+    for (lan_if, host_ip, mask, wan_ifs) in lan_shares {
         commands.push(format!(
             "ip addr add {}/{} dev {} 2>/dev/null || true",
             host_ip, mask, lan_if
@@ -146,11 +145,10 @@ pub fn start_system_forwarding(
 }
 
 pub fn stop_system_forwarding(
-    wan_ifs: &[String],
-    lan_shares: &[(String, String, String)],
+    lan_shares: &[(String, String, String, Vec<String>)],
 ) -> std::io::Result<()> {
     let mut commands = Vec::new();
-    for (lan_if, host_ip, mask) in lan_shares {
+    for (lan_if, host_ip, mask, wan_ifs) in lan_shares {
         for wan_if in wan_ifs {
             commands.push(format!(
                 "iptables -t nat -D POSTROUTING -o {} -j MASQUERADE 2>/dev/null || true",
@@ -396,10 +394,15 @@ mod tests {
         client.send(msg).await.unwrap();
 
         let mut buf = vec![0u8; 128];
-        let n = client.recv(&mut buf).await.unwrap();
+        let n = loop {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            if let Ok(n) = client.recv(&mut buf).await {
+                break n;
+            }
+        };
         assert_eq!(&buf[..n], msg);
 
-        stop_tx.send(true).unwrap();
+        let _ = stop_tx.send(true);
         let _ = tokio::time::timeout(Duration::from_secs(2), fwd).await;
     }
 
@@ -417,7 +420,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let _ = TcpStream::connect(format!("127.0.0.1:{}", port)).await;
 
-        stop_tx.send(true).unwrap();
+        let _ = stop_tx.send(true);
         let result = tokio::time::timeout(Duration::from_secs(3), fwd).await;
         assert!(result.is_ok(), "Forwarder did not stop in time");
         assert!(result.unwrap().is_ok());
