@@ -1,5 +1,7 @@
 use iced::widget::container;
-use iced::{Background, Border, Color, Theme};
+use iced::{Background, Border, Theme};
+
+use crate::colors;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SidebarStyle;
@@ -8,11 +10,8 @@ impl container::StyleSheet for SidebarStyle {
     type Style = Theme;
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(Background::Color(Color::from_rgb(0.96, 0.96, 0.98))),
-            border: Border {
-                width: 0.0,
-                ..Default::default()
-            },
+            background: Some(Background::Color(colors::SIDEBAR_BG)),
+            border: Border { width: 0.0, ..Default::default() },
             ..Default::default()
         }
     }
@@ -25,12 +24,9 @@ impl container::StyleSheet for BadgeStyle {
     type Style = Theme;
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(Background::Color(Color::from_rgb(0.2, 0.5, 0.8))),
-            border: Border {
-                radius: 10.0.into(),
-                ..Default::default()
-            },
-            text_color: Some(Color::WHITE),
+            background: Some(Background::Color(colors::BADGE_BG)),
+            border: Border { ..Default::default() },
+            text_color: Some(colors::BADGE_TEXT),
             ..Default::default()
         }
     }
@@ -43,12 +39,20 @@ impl container::StyleSheet for LanCardStyle {
     type Style = Theme;
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(Background::Color(Color::from_rgb(0.97, 0.98, 1.0))),
-            border: Border {
-                radius: 6.0.into(),
-                width: 1.0,
-                color: Color::from_rgb(0.85, 0.88, 0.92),
-            },
+            background: Some(Background::Color(colors::LAN_CARD_BG)),
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WanCardStyle;
+
+impl container::StyleSheet for WanCardStyle {
+    type Style = Theme;
+    fn appearance(&self, _style: &Self::Style) -> container::Appearance {
+        container::Appearance {
+            background: Some(Background::Color(colors::WAN_CARD_BG)),
             ..Default::default()
         }
     }
@@ -61,7 +65,7 @@ impl container::StyleSheet for ContentStyle {
     type Style = Theme;
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
-            background: Some(Background::Color(Color::WHITE)),
+            background: Some(Background::Color(colors::CONTENT_BG)),
             ..Default::default()
         }
     }

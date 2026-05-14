@@ -21,14 +21,33 @@ pub struct SystemReport {
     pub iptables_failed: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct InterfaceInfo {
     pub name: String,
+    pub mac: String,
+    pub ips: Vec<String>,
+}
+
+impl std::fmt::Display for InterfaceInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl PartialEq for InterfaceInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
 }
 
 pub fn get_interfaces() -> Vec<InterfaceInfo> {
     datalink::interfaces()
         .into_iter()
-        .map(|i| InterfaceInfo { name: i.name })
+        .map(|i| InterfaceInfo {
+            mac: i.mac.map(|m| m.to_string()).unwrap_or_default(),
+            ips: i.ips.iter().map(|ip| ip.to_string()).collect(),
+            name: i.name,
+        })
         .collect()
 }
 

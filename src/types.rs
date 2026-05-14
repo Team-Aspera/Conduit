@@ -80,6 +80,14 @@ pub struct LanShareConfig {
     pub wans: Vec<String>,
 }
 
+pub struct LanShare {
+    pub config: LanShareConfig,
+    pub is_active: bool,
+    pub status: std::borrow::Cow<'static, str>,
+    #[allow(dead_code)]
+    pub stop_tx: Option<tokio::sync::watch::Sender<bool>>,
+}
+
 impl Default for LanShareConfig {
     fn default() -> Self {
         Self {
@@ -146,13 +154,16 @@ pub enum Message {
     SetCloseBehavior(CloseBehavior),
     CloseRequested,
     TrayClicked,
+    #[allow(dead_code)]
     WanToggled(String, bool),
     AddLanShare,
     RemoveLanShare(usize),
     UpdateLanShare(usize, String, String),
     LanWanToggled(usize, String, bool),
+    ToggleLanShare(usize),
+    #[allow(dead_code)]
     ToggleSysForwarding,
-    SysForwardingResult(bool, Result<(), String>),
+    SysForwardingResult(usize, bool, Result<(), String>),
     DetectSystemForward,
     RefreshInterfaces,
     RefreshSystemReport,

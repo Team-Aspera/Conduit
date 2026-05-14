@@ -55,9 +55,9 @@ pub struct ForwarderApp {
     #[cfg(not(target_os = "linux"))]
     pub(crate) _tray_icon: Option<TrayIcon>,
 
-    pub(crate) interfaces: Vec<String>,
+    pub(crate) interfaces: Vec<network::InterfaceInfo>,
     pub(crate) selected_wans: Vec<String>,
-    pub(crate) lan_shares: Vec<LanShareConfig>,
+    pub(crate) lan_shares: Vec<LanShare>,
     pub(crate) sys_active: bool,
     pub(crate) sys_status: std::borrow::Cow<'static, str>,
 
@@ -74,7 +74,7 @@ impl Application for ForwarderApp {
     type Flags = ();
 
     fn new(_flags: ()) -> (Self, Command<Message>) {
-        let ifaces: Vec<String> = network::get_interfaces()
+        let ifaces: Vec<network::InterfaceInfo> = network::get_interfaces()
             .into_iter()
             .filter(|i| {
                 let name = i.name.as_str();
@@ -83,7 +83,6 @@ impl Application for ForwarderApp {
                     && !name.starts_with("docker")
                     && !name.starts_with("br-")
             })
-            .map(|i| i.name)
             .collect();
 
         let (sys_active, active_wans, _) = network::detect_system_forward_status();
@@ -142,7 +141,12 @@ impl Application for ForwarderApp {
                 _tray_icon: None,
                 interfaces: ifaces,
                 selected_wans: active_wans,
-                lan_shares: vec![LanShareConfig::default()],
+                lan_shares: vec![LanShare {
+                    config: LanShareConfig::default(),
+                    is_active: false,
+                    status: cfg.language.get("status_ready").into(),
+                    stop_tx: None,
+                }],
                 sys_active,
                 sys_status: cfg.language.get(status_key).into(),
                 system_report: Some(report),
@@ -182,19 +186,20 @@ impl Application for ForwarderApp {
                     ]);
                 }
                 tracing::info!("Quitting application with cleanup...");
-                if self.sys_active {
-                    let shares: Vec<_> = self
-                        .lan_shares
-                        .iter()
-                        .map(|s| {
-                            let wans = if s.wans.is_empty() {
-                                self.selected_wans.clone()
-                            } else {
-                                s.wans.clone()
-                            };
-                            (s.interface.clone(), s.ip.clone(), s.mask.clone(), wans)
-                        })
-                        .collect();
+                let shares: Vec<_> = self
+                    .lan_shares
+                    .iter()
+                    .filter(|s| !s.config.interface.is_empty())
+                    .map(|s| {
+                        let wans = if s.config.wans.is_empty() {
+                            self.selected_wans.clone()
+                        } else {
+                            s.config.wans.clone()
+                        };
+                        (s.config.interface.clone(), s.config.ip.clone(), s.config.mask.clone(), wans)
+                    })
+                    .collect();
+                if !shares.is_empty() {
                     return Command::perform(
                         async move {
                             let _ = network::stop_system_forwarding(&shares);
@@ -239,7 +244,6 @@ impl Application for ForwarderApp {
                             && !n.starts_with("docker")
                             && !n.starts_with("br-")
                     })
-                    .map(|i| i.name)
                     .collect();
             }
             Message::RefreshSystemReport => {
@@ -281,17 +285,22 @@ impl Application for ForwarderApp {
             Message::LanWanToggled(idx, name, active) => {
                 if let Some(share) = self.lan_shares.get_mut(idx) {
                     if active {
-                        if !share.wans.contains(&name) {
-                            share.wans.push(name);
+                        if !share.config.wans.contains(&name) {
+                            share.config.wans.push(name);
                         }
                     } else {
-                        share.wans.retain(|n| n != &name);
+                        share.config.wans.retain(|n| n != &name);
                     }
                 }
                 self.save_config();
             }
             Message::AddLanShare => {
-                self.lan_shares.push(LanShareConfig::default());
+                self.lan_shares.push(LanShare {
+                    config: LanShareConfig::default(),
+                    is_active: false,
+                    status: self.language.get("status_ready").into(),
+                    stop_tx: None,
+                });
                 self.save_config();
             }
             Message::RemoveLanShare(idx) => {
@@ -303,13 +312,46 @@ impl Application for ForwarderApp {
             Message::UpdateLanShare(idx, field, value) => {
                 if let Some(share) = self.lan_shares.get_mut(idx) {
                     match field.as_str() {
-                        "interface" => share.interface = value,
-                        "ip" => share.ip = value,
-                        "mask" => share.mask = value,
+                        "interface" => share.config.interface = value,
+                        "ip" => share.config.ip = value,
+                        "mask" => share.config.mask = value,
                         _ => {}
                     }
                 }
                 self.save_config();
+            }
+            Message::ToggleLanShare(idx) => {
+                if let Some(share) = self.lan_shares.get_mut(idx) {
+                    let active = share.is_active;
+                    let wans = if share.config.wans.is_empty() {
+                        self.selected_wans.clone()
+                    } else {
+                        share.config.wans.clone()
+                    };
+                    let share_data = (
+                        share.config.interface.clone(),
+                        share.config.ip.clone(),
+                        share.config.mask.clone(),
+                        wans,
+                    );
+                    share.status = (if active {
+                        self.language.get("msg_stopping")
+                    } else {
+                        self.language.get("msg_starting")
+                    })
+                    .into();
+                    return Command::perform(
+                        async move {
+                            let res = if active {
+                                network::stop_system_forwarding(&[share_data])
+                            } else {
+                                network::start_system_forwarding(&[share_data])
+                            };
+                            res.map_err(|e| e.to_string())
+                        },
+                        move |res| Message::SysForwardingResult(idx, !active, res),
+                    );
+                }
             }
             Message::ToggleSysForwarding => {
                 let active = self.sys_active;
@@ -317,12 +359,12 @@ impl Application for ForwarderApp {
                     .lan_shares
                     .iter()
                     .map(|s| {
-                        let wans = if s.wans.is_empty() {
+                        let wans = if s.config.wans.is_empty() {
                             self.selected_wans.clone()
                         } else {
-                            s.wans.clone()
+                            s.config.wans.clone()
                         };
-                        (s.interface.clone(), s.ip.clone(), s.mask.clone(), wans)
+                        (s.config.interface.clone(), s.config.ip.clone(), s.config.mask.clone(), wans)
                     })
                     .collect();
 
@@ -348,20 +390,29 @@ impl Application for ForwarderApp {
                         };
                         res.map_err(|e| e.to_string())
                     },
-                    move |res| Message::SysForwardingResult(!active, res),
+                    move |res| Message::SysForwardingResult(usize::MAX, !active, res),
                 );
             }
-            Message::SysForwardingResult(target, res) => match res {
+            Message::SysForwardingResult(idx, target, res) => match res {
                 Ok(_) => {
-                    self.sys_active = target;
-                    self.sys_status = if target {
-                        self.language.get("msg_active_bang").into()
-                    } else {
-                        self.language.get("msg_stopped").into()
-                    };
+                    if idx == usize::MAX {
+                        self.sys_active = target;
+                        self.sys_status = if target {
+                            self.language.get("msg_active_bang").into()
+                        } else {
+                            self.language.get("msg_stopped").into()
+                        };
+                    } else if let Some(share) = self.lan_shares.get_mut(idx) {
+                        share.is_active = target;
+                        share.status = if target {
+                            self.language.get("status_running").into()
+                        } else {
+                            self.language.get("status_stopped").into()
+                        };
+                    }
                 }
                 Err(e) => {
-                    self.sys_status = format!(
+                    let msg = format!(
                         "{}: {}",
                         if self.language == Language::Chinese {
                             "错误"
@@ -369,8 +420,12 @@ impl Application for ForwarderApp {
                             "Error"
                         },
                         e
-                    )
-                    .into();
+                    );
+                    if idx == usize::MAX {
+                        self.sys_status = msg.into();
+                    } else if let Some(share) = self.lan_shares.get_mut(idx) {
+                        share.status = msg.into();
+                    }
                 }
             },
             Message::AddForwarder => {
@@ -706,7 +761,7 @@ impl ForwarderApp {
                     dst_port: f.dst_port.clone(),
                 })
                 .collect(),
-            lan_shares: self.lan_shares.clone(),
+            lan_shares: self.lan_shares.iter().map(|s| s.config.clone()).collect(),
         };
         cfg.save();
     }
@@ -836,20 +891,20 @@ mod tests {
             "interface".into(),
             "eth1".into(),
         ));
-        assert_eq!(app.lan_shares[0].interface, "eth1");
+        assert_eq!(app.lan_shares[0].config.interface, "eth1");
 
         let _cmd = app.update(Message::UpdateLanShare(0, "ip".into(), "10.0.0.1".into()));
-        assert_eq!(app.lan_shares[0].ip, "10.0.0.1");
+        assert_eq!(app.lan_shares[0].config.ip, "10.0.0.1");
 
         let _cmd = app.update(Message::UpdateLanShare(0, "mask".into(), "16".into()));
-        assert_eq!(app.lan_shares[0].mask, "16");
+        assert_eq!(app.lan_shares[0].config.mask, "16");
     }
 
     #[tokio::test]
     async fn test_app_lan_share_default_values() {
         let (mut app, _) = ForwarderApp::new(());
-        assert_eq!(app.lan_shares[0].ip, "192.168.10.1");
-        assert_eq!(app.lan_shares[0].mask, "24");
+        assert_eq!(app.lan_shares[0].config.ip, "192.168.10.1");
+        assert_eq!(app.lan_shares[0].config.mask, "24");
     }
 
     #[tokio::test]

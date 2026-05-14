@@ -1,4 +1,5 @@
 mod app;
+mod colors;
 mod i18n;
 mod network;
 mod pages;

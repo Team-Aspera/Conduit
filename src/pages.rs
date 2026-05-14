@@ -5,6 +5,7 @@ use iced::widget::{
 use iced::{Alignment, Element, Length, theme};
 
 use crate::app::ForwarderApp;
+use crate::colors;
 use crate::theme::*;
 use crate::types::*;
 
@@ -18,7 +19,7 @@ impl ForwarderApp {
                 column![
                     text(lang.get("label_close_behavior"))
                         .size(16)
-                        .style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                        .style(theme::Text::Color(colors::TITLE_BLUE)),
                     row![
                         button(lang.get("opt_minimize"))
                             .on_press(Message::SetCloseBehavior(CloseBehavior::Minimize))
@@ -56,14 +57,14 @@ impl ForwarderApp {
                 image(self.logo_full.clone()).width(250),
                 text(format!("v{}", env!("CARGO_PKG_VERSION")))
                     .size(14)
-                    .style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5))),
+                    .style(theme::Text::Color(colors::TEXT_GRAY)),
                 vertical_space().height(20),
                 text(lang.get("about_desc")).size(16),
                 vertical_space().height(30),
                 text("GitHub: github.com/xjimlinx/Conduit").size(12),
                 text("Built with Iced & Tokio")
                     .size(12)
-                    .style(theme::Text::Color(iced::Color::from_rgb(0.6, 0.6, 0.6))),
+                    .style(theme::Text::Color(colors::TEXT_DIM)),
             ]
             .spacing(10)
             .align_items(Alignment::Center),
@@ -82,7 +83,7 @@ impl ForwarderApp {
                 let content: Element<Message> = if items.is_empty() {
                     text("No active data")
                         .size(12)
-                        .style(theme::Text::Color(iced::Color::from_rgb(0.5, 0.5, 0.5)))
+                        .style(theme::Text::Color(colors::TEXT_GRAY))
                         .into()
                 } else {
                     let elements: Vec<Element<Message>> = items
@@ -99,7 +100,7 @@ impl ForwarderApp {
                 let card: Element<Message> = container(column![
                     text(title)
                         .size(16)
-                        .style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
+                        .style(theme::Text::Color(colors::TITLE_BLUE)),
                     vertical_space().height(8),
                     content,
                 ])
@@ -164,9 +165,9 @@ impl ForwarderApp {
                         })
                         .size(14)
                         .style(theme::Text::Color(if report.ip_forward_enabled {
-                            iced::Color::from_rgb(0.2, 0.6, 0.2)
+                            colors::IP_FORWARD_ON
                         } else {
-                            iced::Color::from_rgb(0.7, 0.2, 0.2)
+                            colors::IP_FORWARD_OFF
                         }))
                     ]
                     .align_items(Alignment::Center)
@@ -211,14 +212,57 @@ impl ForwarderApp {
     pub fn view_share_page(&self) -> Element<'_, Message> {
         let lang = self.language;
 
-        let wan_list = self
-            .interfaces
-            .iter()
-            .fold(column![].spacing(3), |col, iface| {
-                let item: Element<Message> = text(iface).size(13).into();
-                col.push(item)
-            });
-
+        let wan_cards: Element<Message> = {
+            let mut col = column![].spacing(6);
+            for iface in &self.interfaces {
+                let ip_section: Element<Message> = if iface.ips.is_empty() {
+                    let no_ip: Element<Message> = text("-").size(11).into();
+                    no_ip
+                } else {
+                    let mut v4: Vec<&str> = Vec::new();
+                    let mut v6: Vec<&str> = Vec::new();
+                    for ip in &iface.ips {
+                        if ip.contains(':') { v6.push(ip); } else { v4.push(ip); }
+                    }
+                    let mut col = column![].spacing(2);
+                    if !v4.is_empty() {
+                        let line: Element<Message> = text(format!("IPv4: {}", v4.join(", "))).size(11).into();
+                        col = col.push(line);
+                    }
+                    if !v6.is_empty() {
+                        let line: Element<Message> = text(format!("IPv6: {}", v6.join(", "))).size(11).into();
+                        col = col.push(line);
+                    }
+                    col.into()
+                };
+                let card: Element<Message> = container(
+                    column![
+                        container(text(&iface.name).size(14))
+                            .padding([6, 10])
+                            .width(Length::Fill)
+                            .style(theme::Container::Custom(Box::new(crate::theme::BadgeStyle))),
+                        container(
+                            column![
+                                text(format!("MAC: {}", iface.mac)).size(11),
+                                ip_section,
+                            ]
+                            .spacing(4),
+                        )
+                        .padding(10)
+                        .width(Length::Fill)
+                        .style(theme::Container::Custom(Box::new(crate::theme::WanCardStyle))),
+                    ]
+                    .spacing(0),
+                )
+                .style(theme::Container::Box)
+                .width(Length::Fill)
+                .into();
+                col = col.push(card);
+            }
+            let inner: Element<Message> = col.into();
+            container(inner).padding([0, 14, 0, 0]).into()
+        };
+ 
         let lan_cards: Vec<Element<Message>> = self
             .lan_shares
             .iter()
@@ -230,12 +274,14 @@ impl ForwarderApp {
                             text(lang.get("label_lan")).width(80).size(14),
                             pick_list(
                                 &self.interfaces[..],
-                                if share.interface.is_empty() {
+                                if share.config.interface.is_empty() {
                                     None
                                 } else {
-                                    Some(share.interface.clone())
+                                    self.interfaces.iter()
+                                        .find(|i| i.name == share.config.interface)
+                                        .cloned()
                                 },
-                                move |v| Message::UpdateLanShare(idx, "interface".into(), v),
+                                move |v| Message::UpdateLanShare(idx, "interface".into(), v.name),
                             )
                             .width(Length::Fill),
                             button(text("✕").shaping(iced::widget::text::Shaping::Advanced))
@@ -247,9 +293,9 @@ impl ForwarderApp {
                         .align_items(Alignment::Center),
                         row![
                             text(format!("{} /", lang.get("label_lan_ip"))).size(14).width(80),
-                            text_input("192.168.10.1", &share.ip)
+                            text_input("192.168.10.1", &share.config.ip)
                                 .on_input(move |v| Message::UpdateLanShare(idx, "ip".into(), v)),
-                            text_input("24", &share.mask)
+                            text_input("24", &share.config.mask)
                                 .on_input(move |v| Message::UpdateLanShare(
                                     idx,
                                     "mask".into(),
@@ -261,10 +307,10 @@ impl ForwarderApp {
                         .align_items(Alignment::Center),
                         {
                             let mut wan_col = column![].spacing(3);
-                            for iface in self.interfaces.iter().filter(|i| **i != share.interface) {
-                                let cb: Element<Message> = checkbox(iface, share.wans.contains(iface))
+                            for iface in self.interfaces.iter().filter(|i| i.name != share.config.interface) {
+                                let cb: Element<Message> = checkbox(&iface.name, share.config.wans.contains(&iface.name))
                                     .on_toggle(move |a| {
-                                        Message::LanWanToggled(idx, iface.clone(), a)
+                                        Message::LanWanToggled(idx, iface.name.clone(), a)
                                     })
                                     .into();
                                 wan_col = wan_col.push(cb);
@@ -272,6 +318,19 @@ impl ForwarderApp {
                             let w: Element<Message> = container(wan_col).padding([4, 0]).into();
                             w
                         },
+                        button(if share.is_active {
+                            lang.get("btn_stop_share")
+                        } else {
+                            lang.get("btn_start_share")
+                        })
+                        .on_press(Message::ToggleLanShare(idx))
+                        .style(if share.is_active {
+                            theme::Button::Destructive
+                        } else {
+                            theme::Button::Primary
+                        })
+                        .width(Length::Fill)
+                        .padding(8),
                     ]
                     .spacing(6),
                 )
@@ -281,10 +340,11 @@ impl ForwarderApp {
             })
             .collect();
 
-        let mut lan_col = column![].spacing(10);
+        let mut lan_col_inner = column![].spacing(10);
         for card in lan_cards {
-            lan_col = lan_col.push(card);
+            lan_col_inner = lan_col_inner.push(card);
         }
+        let lan_col: Element<Message> = container(lan_col_inner).padding([0, 14, 0, 0]).into();
 
         let mut children: Vec<Element<Message>> = Vec::new();
 
@@ -294,10 +354,17 @@ impl ForwarderApp {
         children.push(
             container(
                 column![
-                    text(lang.get("label_wan"))
-                        .size(16)
-                        .style(theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7))),
-                    scrollable(wan_list).height(100),
+                    row![
+                        text(lang.get("label_wan"))
+                            .size(16)
+                            .style(theme::Text::Color(colors::TITLE_BLUE)),
+                        horizontal_space().width(Length::Fill),
+                        button(lang.get("btn_detect"))
+                            .on_press(Message::DetectSystemForward)
+                            .padding(8),
+                    ]
+                    .align_items(Alignment::Center),
+                    scrollable(wan_cards).height(180),
                 ]
                 .spacing(10)
             )
@@ -312,9 +379,7 @@ impl ForwarderApp {
                     row![
                         text(lang.get("label_lan"))
                             .size(16)
-                            .style(theme::Text::Color(iced::Color::from_rgb(
-                                0.2, 0.4, 0.7,
-                            ))),
+                            .style(theme::Text::Color(colors::TITLE_BLUE)),
                         horizontal_space().width(Length::Fill),
                         button(
                             text(format!("➕ {}", lang.get("btn_add_new")))
@@ -334,42 +399,19 @@ impl ForwarderApp {
             .into(),
         );
 
-        children.push(
-            row![
-                button(if self.sys_active {
-                    lang.get("btn_stop_share")
-                } else {
-                    lang.get("btn_start_share")
-                })
-                .on_press(Message::ToggleSysForwarding)
-                .width(Length::Fill)
-                .padding(12)
-                .style(if self.sys_active {
-                    theme::Button::Destructive
-                } else {
-                    theme::Button::Primary
-                }),
-                button(lang.get("btn_detect"))
-                    .on_press(Message::DetectSystemForward)
-                    .padding(12),
-            ]
-            .spacing(10)
-            .into(),
-        );
-
         if self.sys_active {
             let share_badges: Vec<Element<Message>> = self
                 .lan_shares
                 .iter()
-                .filter(|s| !s.interface.is_empty())
+                .filter(|s| !s.config.interface.is_empty())
                 .map(|share| {
                     container(
                         row![
-                            container(text(&share.interface).size(12))
+                            container(text(&share.config.interface).size(12))
                                 .padding([2, 8])
                                 .style(theme::Container::Custom(Box::new(BadgeStyle))),
                             horizontal_space().width(10),
-                            text(format!("{}/{}", share.ip, share.mask))
+                            text(format!("{}/{}", share.config.ip, share.config.mask))
                                 .size(13)
                                 .font(iced::Font::MONOSPACE),
                         ]
@@ -386,7 +428,7 @@ impl ForwarderApp {
                     container(
                         column![
                             text(lang.get("label_current_share")).size(16).style(
-                                theme::Text::Color(iced::Color::from_rgb(0.2, 0.4, 0.7)),
+                                theme::Text::Color(colors::TITLE_BLUE),
                             ),
                             list,
                         ]
@@ -480,9 +522,9 @@ impl ForwarderApp {
                                 text(format!("● {}", f.status))
                                     .size(12)
                                     .style(theme::Text::Color(if f.is_active {
-                                        iced::Color::from_rgb(0.2, 0.7, 0.2)
+                                        colors::STATUS_GREEN
                                     } else {
-                                        iced::Color::from_rgb(0.6, 0.6, 0.6)
+                                        colors::TEXT_DIM
                                     }))
                                     .width(Length::Fill),
                                 button(if f.is_active {
