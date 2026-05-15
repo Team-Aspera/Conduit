@@ -650,11 +650,13 @@ impl Application for ForwarderApp {
             let is_selected = page == current_page;
             button(
                 row![
-                    container(text(icon)
-                        .size(16)
-                        .shaping(iced::widget::text::Shaping::Advanced))
-                        .width(24)
-                        .center_x(),
+                    container(
+                        text(icon)
+                            .size(16)
+                            .shaping(iced::widget::text::Shaping::Advanced)
+                    )
+                    .width(24)
+                    .center_x(),
                     text(label).size(14),
                 ]
                 .spacing(10)
@@ -905,7 +907,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_app_lan_share_default_values() {
-        let (mut app, _) = ForwarderApp::new(());
+        let (app, _) = ForwarderApp::new(());
         assert_eq!(app.lan_shares[0].config.ip, "192.168.10.1");
         assert_eq!(app.lan_shares[0].config.mask, "24");
     }
