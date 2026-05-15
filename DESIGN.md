@@ -2,77 +2,116 @@
 
 ## 概述
 
-Conduit 是一个跨平台的网络工具，提供图形化界面简化网络共享（NAT）和端口转发任务。目标用户是需要为开发板提供网络接入或进行调试的开发者。
+Conduit 是一个跨平台网络工具，为复杂的网络转发任务（NAT 共享、端口转发）提供现代化图形界面。基于 Rust、Iced GUI 框架和 Tokio 异步运行时构建。
 
-核心设计原则：**简单易用** — 复杂网络操作通过 GUI 一键完成，无需记忆 iptables 命令。
+核心目标：
+- 为开发板等设备提供一键式网络共享（NAT + IP 转发）
+- 支持多条 TCP/UDP 端口转发规则并发运行
+- 纯 GUI 操作，无需手写 iptables 命令
 
 ## 架构
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Iced GUI                         │
-│  (Sidebar / Network Share / Port Forward / Monitor) │
-└──────────────────────┬──────────────────────────────┘
-                       │ Message
-┌──────────────────────▼──────────────────────────────┐
-│              ForwarderApp (Application)             │
-│  状态管理 / 事件处理 / 命令派发                        │
-└──────┬───────────────────────────────────┬──────────┘
-       │                                   │
-┌──────▼──────┐                  ┌─────────▼─────────┐
-│  network.rs │                  │  Tokio Runtime    │
-│  (核心逻辑)  │                  │  (异步 I/O)       │
-└─────────────┘                  └───────────────────┘
-```
+src/
+  main.rs     入口，模块声明 + ForwarderApp::run
+  app.rs      ForwarderApp 结构体 + Application impl (new, update, subscription)
+  pages.rs    每个页面的 view 渲染方法
+  types.rs    所有类型定义（Language, Message, Config 等）
+  network.rs  底层网络操作（iptables、TCP/UDP 转发）
+  theme.rs    自定义容器样式
+  i18n.rs     编译时加载 JSON 翻译
+  widgets.rs  按钮工厂函数
+  colors.rs   全局颜色常量
 
-模块划分：
-- **GUI 层** (`main.rs`) — Iced Application，负责页面渲染、用户交互、状态管理
-- **网络层** (`network.rs`) — 系统转发控制、TCP/UDP 端口转发、网络检测
+locales/
+  zh-CN.json  中文翻译键值对
+  en.json     英文翻译键值对
+```
 
 ## 核心模块
 
-### GUI 模块 (`main.rs`)
-- `ForwarderApp` — 主应用结构体，持有所有状态
-- `Message` — 事件枚举，驱动状态变更
-- 5 个页面：Network Share、Port Forwarders、System Monitor、Settings、About
+### app.rs — 应用状态与事件处理
 
-### 网络模块 (`network.rs`)
-- `get_interfaces()` — 列举网络接口
-- `get_system_network_report()` — 获取系统网络状态（IP 转发、NAT 规则、监听端口）
-- `start_system_forwarding()` / `stop_system_forwarding()` — 通过 `pkexec` + `iptables` 管理 NAT
-- `start_tcp_forward()` / `start_udp_forward()` — 基于 Tokio 的端口转发协程
+`ForwarderApp` 是应用的核心状态结构体，包含当前页面、语言设置、共享配置、转发规则列表等字段。
 
-## CLI 设计
+实现 `Application` trait：
+- `new()` — 初始化接口列表、加载配置、恢复转发状态
+- `update()` — 处理所有 Message 事件（页面切换、语言切换、转发控制等）
+- `view()` — 构建 UI 布局（sidebar + 内容区）
+- `subscription()` — 订阅窗口关闭事件、系统托盘事件
 
-非 CLI 程序，为 GUI 应用。交互通过 Iced GUI 完成。
+### pages.rs — 页面渲染
+
+每个页面有独立的 view 方法：
+- `view_share_page()` — 网络共享页面（外网接口池、LAN 卡片、独立开关）
+- `view_forward_page()` — 端口转发页面（规则列表、增删改）
+- `view_monitor_page()` — 系统监控页面（转发流、NAT 规则）
+- `view_settings_page()` — 设置页面（窗口关闭行为）
+- `view_about_page()` — 关于页面
+
+### network.rs — 网络操作
+
+- `get_interfaces()` — 获取系统网络接口列表（名称、MAC、IP）
+- `detect_system_forward_status()` — 检测当前 iptables NAT 状态
+- `start_system_forwarding()` / `stop_system_forwarding()` — 启停 NAT 共享
+- `start_tcp_forward()` / `start_udp_forward()` — 启停端口转发（异步）
+
+### i18n.rs — 国际化
+
+使用 `include_str!` 在编译时嵌入 `locales/*.json`，`once_cell::Lazy` 解析为 HashMap。`Language::get()` 委托给 `i18n::get()` 查询翻译。
+
+### types.rs — 核心类型
+
+关键数据结构：
+- `Message` 枚举 — 所有 UI 事件的类型化表示
+- `LanShare` / `LanShareConfig` — LAN 共享配置 + 运行时状态（is_active, status）
+- `PortForwarder` / `PortForwarderConfig` — 端口转发规则
+- `AppConfig` — 持久化配置（JSON 序列化）
 
 ## 数据流
 
 ### 网络共享流程
-1. 用户选择 WAN 接口 → LAN 接口 → 点击"Start Share"
-2. `start_system_forwarding()` 通过 `pkexec` 以 root 权限执行：
-   - 启用 `ip_forward`
-   - 为 LAN 接口分配 IP
-   - 添加 MASQUERADE 和 FORWARD 规则
+
+```
+用户点击 LAN 卡片"开始共享"
+  → Message::ToggleLanShare(idx)
+  → ForwarderApp::update()
+    → 检查 interface 和 wans 是否有效
+    → 调用 network::start_system_forwarding() [通过 pkexec 提权]
+      → 开启 ip_forward
+      → 添加 IP 到 LAN 接口
+      → 添加 iptables MASQUERADE 规则
+    → 收到 SysForwardingResult(idx, target, res)
+    → 更新对应 LanShare.is_active/status
+```
 
 ### 端口转发流程
-1. 用户添加转发规则 → 配置协议/IP/端口 → 点击 Start
-2. `start_tcp_forward()` / `start_udp_forward()` 启动 Tokio 异步转发协程
-3. 通过 `watch::channel` 实现停止控制
+
+```
+用户点击"▶ Start"
+  → Message::TogglePortForwarding(id)
+  → ForwarderApp::update()
+    → 验证端口号
+    → tokio::spawn(start_tcp_forward / start_udp_forward)
+      → 绑定源端口
+      → 循环 accept + copy_bidirectional
+    → 更新 PortForwarder.is_active/status
+```
 
 ## 配置
 
-### 自动保存（应用设置）
+配置文件路径：`~/.config/conduit/config.json`
 
-位置：`~/.config/conduit/config.json`（XDG 标准路径，跨平台自动适配）
-
-保存内容：
-- `language` — 界面语言（Chinese / English）
-- `close_behavior` — 关闭窗口行为（Minimize / Quit）
-- `forwarders` — 端口转发规则列表
-
-启动时自动加载，设置变更时实时写入。
-
-### 手动导入/导出
-
-通过文件选择器导入/导出端口转发规则（纯 JSON 数组格式），与自动保存互不冲突。
+格式：
+```json
+{
+  "language": "Chinese",
+  "close_behavior": "Quit",
+  "forwarders": [
+    { "protocol": "TCP", "src_addr": "0.0.0.0", "src_port": "8080", "dst_addr": "10.0.0.1", "dst_port": "80" }
+  ],
+  "lan_shares": [
+    { "interface": "eth0", "ip": "192.168.10.1", "mask": "24", "wans": [] }
+  ]
+}
+```

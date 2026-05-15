@@ -356,11 +356,12 @@ mod tests {
             .await
         });
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let mut client = TcpStream::connect(format!("127.0.0.1:{}", forwarder_port))
-            .await
-            .unwrap();
+        let mut client = loop {
+            if let Ok(c) = TcpStream::connect(format!("127.0.0.1:{}", forwarder_port)).await {
+                break c;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
         let msg = b"hello conduit";
         client.write_all(msg).await.unwrap();
 
@@ -368,7 +369,7 @@ mod tests {
         let n = client.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], msg);
 
-        stop_tx.send(true).unwrap();
+        let _ = stop_tx.send(true);
         let _ = tokio::time::timeout(Duration::from_secs(2), fwd).await;
     }
 
@@ -402,18 +403,15 @@ mod tests {
             .await
         });
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
         let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         client
             .connect(format!("127.0.0.1:{}", fwd_port))
             .await
             .unwrap();
         let msg = b"hello conduit udp";
-        client.send(msg).await.unwrap();
-
         let mut buf = vec![0u8; 128];
         let n = loop {
+            let _ = client.send(msg).await;
             tokio::time::sleep(Duration::from_millis(50)).await;
             if let Ok(n) = client.recv(&mut buf).await {
                 break n;
@@ -436,8 +434,12 @@ mod tests {
             start_tcp_forward("127.0.0.1".into(), port, "127.0.0.1".into(), 9999, stop_rx).await
         });
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let _ = TcpStream::connect(format!("127.0.0.1:{}", port)).await;
+        loop {
+            if let Ok(_) = TcpStream::connect(format!("127.0.0.1:{}", port)).await {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
 
         let _ = stop_tx.send(true);
         let result = tokio::time::timeout(Duration::from_secs(3), fwd).await;

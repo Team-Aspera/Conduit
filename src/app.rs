@@ -650,9 +650,11 @@ impl Application for ForwarderApp {
             let is_selected = page == current_page;
             button(
                 row![
-                    text(icon)
+                    container(text(icon)
                         .size(16)
-                        .shaping(iced::widget::text::Shaping::Advanced),
+                        .shaping(iced::widget::text::Shaping::Advanced))
+                        .width(24)
+                        .center_x(),
                     text(label).size(14),
                 ]
                 .spacing(10)
