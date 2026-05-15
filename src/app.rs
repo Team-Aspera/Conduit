@@ -23,8 +23,21 @@ impl ksni::Tray for ConduitTray {
     fn id(&self) -> String {
         "conduit".into()
     }
-    fn icon_name(&self) -> String {
-        "conduit".into()
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        static ICON: std::sync::LazyLock<Vec<ksni::Icon>> = std::sync::LazyLock::new(|| {
+            use ::image::GenericImageView;
+            let img = ::image::load_from_memory(
+                include_bytes!("../assets/images/Conduit-logoonly.png"),
+            )
+            .expect("Failed to decode tray icon");
+            let rgba = img.to_rgba8();
+            vec![ksni::Icon {
+                width: img.width() as i32,
+                height: img.height() as i32,
+                data: rgba.into_raw(),
+            }]
+        });
+        ICON.clone()
     }
     fn title(&self) -> String {
         "Conduit".into()
