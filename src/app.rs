@@ -89,9 +89,8 @@ impl Application for ForwarderApp {
         let report = network::get_system_network_report();
         let cfg = AppConfig::load();
 
-        let logo_only = Handle::from_memory(
-            include_bytes!("../assets/images/Conduit-logoonly.png").as_slice(),
-        );
+        let logo_only =
+            Handle::from_memory(include_bytes!("../assets/images/Conduit-logoonly.png").as_slice());
         let logo_full =
             Handle::from_memory(include_bytes!("../assets/images/Conduit.png").as_slice());
 
@@ -196,7 +195,12 @@ impl Application for ForwarderApp {
                         } else {
                             s.config.wans.clone()
                         };
-                        (s.config.interface.clone(), s.config.ip.clone(), s.config.mask.clone(), wans)
+                        (
+                            s.config.interface.clone(),
+                            s.config.ip.clone(),
+                            s.config.mask.clone(),
+                            wans,
+                        )
                     })
                     .collect();
                 if !shares.is_empty() {
@@ -364,7 +368,12 @@ impl Application for ForwarderApp {
                         } else {
                             s.config.wans.clone()
                         };
-                        (s.config.interface.clone(), s.config.ip.clone(), s.config.mask.clone(), wans)
+                        (
+                            s.config.interface.clone(),
+                            s.config.ip.clone(),
+                            s.config.mask.clone(),
+                            wans,
+                        )
                     })
                     .collect();
 
@@ -543,8 +552,7 @@ impl Application for ForwarderApp {
             Message::ConfigFileSelected(path) => {
                 if let Some(p) = path
                     && let Ok(content) = std::fs::read_to_string(p)
-                    && let Ok(configs) =
-                        serde_json::from_str::<Vec<PortForwarderConfig>>(&content)
+                    && let Ok(configs) = serde_json::from_str::<Vec<PortForwarderConfig>>(&content)
                 {
                     for cfg in configs {
                         self.port_forwarders.push(PortForwarder {
@@ -690,12 +698,7 @@ impl Application for ForwarderApp {
                     Page::Settings,
                     self.current_page
                 ),
-                sidebar_button(
-                    lang.get("nav_about"),
-                    "ℹ️",
-                    Page::About,
-                    self.current_page
-                ),
+                sidebar_button(lang.get("nav_about"), "ℹ️", Page::About, self.current_page),
                 vertical_space().height(Length::Fill),
                 row![
                     button("中")
@@ -765,7 +768,6 @@ impl ForwarderApp {
         };
         cfg.save();
     }
-
 }
 
 #[cfg(test)]
@@ -838,8 +840,7 @@ mod tests {
         let _cmd = app.update(Message::AddForwarder);
         assert_eq!(app.port_forwarders.len(), 3);
 
-        let ids: std::collections::HashSet<_> =
-            app.port_forwarders.iter().map(|f| f.id).collect();
+        let ids: std::collections::HashSet<_> = app.port_forwarders.iter().map(|f| f.id).collect();
         assert_eq!(ids.len(), 3);
     }
 

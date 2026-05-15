@@ -11,7 +11,10 @@ impl container::StyleSheet for SidebarStyle {
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
             background: Some(Background::Color(colors::SIDEBAR_BG)),
-            border: Border { width: 0.0, ..Default::default() },
+            border: Border {
+                width: 0.0,
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -25,7 +28,9 @@ impl container::StyleSheet for BadgeStyle {
     fn appearance(&self, _style: &Self::Style) -> container::Appearance {
         container::Appearance {
             background: Some(Background::Color(colors::BADGE_BG)),
-            border: Border { ..Default::default() },
+            border: Border {
+                ..Default::default()
+            },
             text_color: Some(colors::BADGE_TEXT),
             ..Default::default()
         }

@@ -21,7 +21,6 @@ pub const WAN_CARD_BG: Color = Color::from_rgb(0.96, 0.96, 0.98);
 /// 内容区白色背景 (theme.rs ContentStyle)
 pub const CONTENT_BG: Color = Color::WHITE;
 
-
 // ── 文字色 ──
 
 /// 各区块标题蓝色 (pages.rs — WAN框/LAN框/设置页 标题)
@@ -32,7 +31,6 @@ pub const TEXT_GRAY: Color = Color::from_rgb(0.5, 0.5, 0.5);
 
 /// 淡化文字 (pages.rs — "Built with Iced & Tokio"、非活跃状态)
 pub const TEXT_DIM: Color = Color::from_rgb(0.6, 0.6, 0.6);
-
 
 // ── 状态色 ──
 

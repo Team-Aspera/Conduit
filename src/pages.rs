@@ -1,6 +1,6 @@
 use iced::widget::{
-    button, checkbox, column, container, horizontal_space, image, pick_list, row, scrollable,
-    text, text_input, vertical_space,
+    button, checkbox, column, container, horizontal_space, image, pick_list, row, scrollable, text,
+    text_input, vertical_space,
 };
 use iced::{Alignment, Element, Length, theme};
 
@@ -126,20 +126,20 @@ impl ForwarderApp {
                             self.refresh_interval
                         ))
                         .size(12),
-                        button("1s")
-                            .on_press(Message::SetRefreshInterval(1))
-                            .style(if self.refresh_interval == 1 {
+                        button("1s").on_press(Message::SetRefreshInterval(1)).style(
+                            if self.refresh_interval == 1 {
                                 theme::Button::Primary
                             } else {
                                 theme::Button::Secondary
-                            }),
-                        button("5s")
-                            .on_press(Message::SetRefreshInterval(5))
-                            .style(if self.refresh_interval == 5 {
+                            }
+                        ),
+                        button("5s").on_press(Message::SetRefreshInterval(5)).style(
+                            if self.refresh_interval == 5 {
                                 theme::Button::Primary
                             } else {
                                 theme::Button::Secondary
-                            }),
+                            }
+                        ),
                         button("10s")
                             .on_press(Message::SetRefreshInterval(10))
                             .style(if self.refresh_interval == 10 {
@@ -164,11 +164,13 @@ impl ForwarderApp {
                             lang.get("label_disabled")
                         })
                         .size(14)
-                        .style(theme::Text::Color(if report.ip_forward_enabled {
-                            colors::IP_FORWARD_ON
-                        } else {
-                            colors::IP_FORWARD_OFF
-                        }))
+                        .style(theme::Text::Color(
+                            if report.ip_forward_enabled {
+                                colors::IP_FORWARD_ON
+                            } else {
+                                colors::IP_FORWARD_OFF
+                            }
+                        ))
                     ]
                     .align_items(Alignment::Center)
                 )
@@ -222,15 +224,21 @@ impl ForwarderApp {
                     let mut v4: Vec<&str> = Vec::new();
                     let mut v6: Vec<&str> = Vec::new();
                     for ip in &iface.ips {
-                        if ip.contains(':') { v6.push(ip); } else { v4.push(ip); }
+                        if ip.contains(':') {
+                            v6.push(ip);
+                        } else {
+                            v4.push(ip);
+                        }
                     }
                     let mut col = column![].spacing(2);
                     if !v4.is_empty() {
-                        let line: Element<Message> = text(format!("IPv4: {}", v4.join(", "))).size(11).into();
+                        let line: Element<Message> =
+                            text(format!("IPv4: {}", v4.join(", "))).size(11).into();
                         col = col.push(line);
                     }
                     if !v6.is_empty() {
-                        let line: Element<Message> = text(format!("IPv6: {}", v6.join(", "))).size(11).into();
+                        let line: Element<Message> =
+                            text(format!("IPv6: {}", v6.join(", "))).size(11).into();
                         col = col.push(line);
                     }
                     col.into()
@@ -242,15 +250,14 @@ impl ForwarderApp {
                             .width(Length::Fill)
                             .style(theme::Container::Custom(Box::new(crate::theme::BadgeStyle))),
                         container(
-                            column![
-                                text(format!("MAC: {}", iface.mac)).size(11),
-                                ip_section,
-                            ]
-                            .spacing(4),
+                            column![text(format!("MAC: {}", iface.mac)).size(11), ip_section,]
+                                .spacing(4),
                         )
                         .padding(10)
                         .width(Length::Fill)
-                        .style(theme::Container::Custom(Box::new(crate::theme::WanCardStyle))),
+                        .style(theme::Container::Custom(Box::new(
+                            crate::theme::WanCardStyle
+                        ))),
                     ]
                     .spacing(0),
                 )
@@ -262,7 +269,7 @@ impl ForwarderApp {
             let inner: Element<Message> = col.into();
             container(inner).padding([0, 14, 0, 0]).into()
         };
- 
+
         let lan_cards: Vec<Element<Message>> = self
             .lan_shares
             .iter()
@@ -277,7 +284,8 @@ impl ForwarderApp {
                                 if share.config.interface.is_empty() {
                                     None
                                 } else {
-                                    self.interfaces.iter()
+                                    self.interfaces
+                                        .iter()
                                         .find(|i| i.name == share.config.interface)
                                         .cloned()
                                 },
@@ -292,27 +300,30 @@ impl ForwarderApp {
                         .spacing(6)
                         .align_items(Alignment::Center),
                         row![
-                            text(format!("{} /", lang.get("label_lan_ip"))).size(14).width(80),
+                            text(format!("{} /", lang.get("label_lan_ip")))
+                                .size(14)
+                                .width(80),
                             text_input("192.168.10.1", &share.config.ip)
                                 .on_input(move |v| Message::UpdateLanShare(idx, "ip".into(), v)),
                             text_input("24", &share.config.mask)
-                                .on_input(move |v| Message::UpdateLanShare(
-                                    idx,
-                                    "mask".into(),
-                                    v,
-                                ))
+                                .on_input(move |v| Message::UpdateLanShare(idx, "mask".into(), v,))
                                 .width(60),
                         ]
                         .spacing(6)
                         .align_items(Alignment::Center),
                         {
                             let mut wan_col = column![].spacing(3);
-                            for iface in self.interfaces.iter().filter(|i| i.name != share.config.interface) {
-                                let cb: Element<Message> = checkbox(&iface.name, share.config.wans.contains(&iface.name))
-                                    .on_toggle(move |a| {
-                                        Message::LanWanToggled(idx, iface.name.clone(), a)
-                                    })
-                                    .into();
+                            for iface in self
+                                .interfaces
+                                .iter()
+                                .filter(|i| i.name != share.config.interface)
+                            {
+                                let cb: Element<Message> =
+                                    checkbox(&iface.name, share.config.wans.contains(&iface.name))
+                                        .on_toggle(move |a| {
+                                            Message::LanWanToggled(idx, iface.name.clone(), a)
+                                        })
+                                        .into();
                                 wan_col = wan_col.push(cb);
                             }
                             let w: Element<Message> = container(wan_col).padding([4, 0]).into();
@@ -335,7 +346,9 @@ impl ForwarderApp {
                     .spacing(6),
                 )
                 .padding(8)
-                .style(theme::Container::Custom(Box::new(crate::theme::LanCardStyle)))
+                .style(theme::Container::Custom(Box::new(
+                    crate::theme::LanCardStyle,
+                )))
                 .into()
             })
             .collect();
@@ -366,7 +379,7 @@ impl ForwarderApp {
                     .align_items(Alignment::Center),
                     scrollable(wan_cards).height(180),
                 ]
-                .spacing(10)
+                .spacing(10),
             )
             .padding(15)
             .style(theme::Container::Box)
@@ -392,7 +405,7 @@ impl ForwarderApp {
                     .align_items(Alignment::Center),
                     scrollable(lan_col).height(200),
                 ]
-                .spacing(10)
+                .spacing(10),
             )
             .padding(15)
             .style(theme::Container::Box)
@@ -427,9 +440,9 @@ impl ForwarderApp {
                 children.push(
                     container(
                         column![
-                            text(lang.get("label_current_share")).size(16).style(
-                                theme::Text::Color(colors::TITLE_BLUE),
-                            ),
+                            text(lang.get("label_current_share"))
+                                .size(16)
+                                .style(theme::Text::Color(colors::TITLE_BLUE),),
                             list,
                         ]
                         .spacing(10),
