@@ -19,7 +19,7 @@ impl ForwarderApp {
                 column![
                     text(lang.get("label_close_behavior"))
                         .size(16)
-                        .style(theme::Text::Color(colors::TITLE_BLUE)),
+                        .style(theme::Text::Color(self.color_title())),
                     row![
                         button(lang.get("opt_minimize"))
                             .on_press(Message::SetCloseBehavior(CloseBehavior::Minimize))
@@ -57,14 +57,14 @@ impl ForwarderApp {
                 image(self.logo_full.clone()).width(250),
                 text(format!("v{}", env!("CARGO_PKG_VERSION")))
                     .size(14)
-                    .style(theme::Text::Color(colors::TEXT_GRAY)),
+                    .style(theme::Text::Color(self.color_text_muted())),
                 vertical_space().height(20),
                 text(lang.get("about_desc")).size(16),
                 vertical_space().height(30),
                 text("GitHub: github.com/xjimlinx/Conduit").size(12),
                 text("Built with Iced & Tokio")
                     .size(12)
-                    .style(theme::Text::Color(colors::TEXT_DIM)),
+                    .style(theme::Text::Color(self.color_text_dim())),
             ]
             .spacing(10)
             .align_items(Alignment::Center),
@@ -83,7 +83,7 @@ impl ForwarderApp {
                 let content: Element<Message> = if items.is_empty() {
                     text("No active data")
                         .size(12)
-                        .style(theme::Text::Color(colors::TEXT_GRAY))
+                        .style(theme::Text::Color(self.color_text_muted()))
                         .into()
                 } else {
                     let elements: Vec<Element<Message>> = items
@@ -100,7 +100,7 @@ impl ForwarderApp {
                 let card: Element<Message> = container(column![
                     text(title)
                         .size(16)
-                        .style(theme::Text::Color(colors::TITLE_BLUE)),
+                        .style(theme::Text::Color(self.color_title())),
                     vertical_space().height(8),
                     content,
                 ])
@@ -245,10 +245,13 @@ impl ForwarderApp {
                 };
                 let card: Element<Message> = container(
                     column![
-                        container(text(&iface.name).size(14))
-                            .padding([6, 10])
-                            .width(Length::Fill)
-                            .style(theme::Container::Custom(Box::new(crate::theme::BadgeStyle))),
+                        container(text(&iface.name).size(14).font(iced::Font {
+                            weight: iced::font::Weight::Bold,
+                            ..iced::Font::default()
+                        }))
+                        .padding([6, 10])
+                        .width(Length::Fill)
+                        .style(theme::Container::Custom(Box::new(crate::theme::BadgeStyle))),
                         container(
                             column![text(format!("MAC: {}", iface.mac)).size(11), ip_section,]
                                 .spacing(4),
@@ -308,6 +311,18 @@ impl ForwarderApp {
                             text_input("24", &share.config.mask)
                                 .on_input(move |v| Message::UpdateLanShare(idx, "mask".into(), v,))
                                 .width(60),
+                            button(if share.is_active {
+                                lang.get("btn_stop_share")
+                            } else {
+                                lang.get("btn_start_share")
+                            })
+                            .on_press(Message::ToggleLanShare(idx))
+                            .style(if share.is_active {
+                                theme::Button::Destructive
+                            } else {
+                                theme::Button::Primary
+                            })
+                            .padding([5, 10]),
                         ]
                         .spacing(6)
                         .align_items(Alignment::Center),
@@ -329,19 +344,6 @@ impl ForwarderApp {
                             let w: Element<Message> = container(wan_col).padding([4, 0]).into();
                             w
                         },
-                        button(if share.is_active {
-                            lang.get("btn_stop_share")
-                        } else {
-                            lang.get("btn_start_share")
-                        })
-                        .on_press(Message::ToggleLanShare(idx))
-                        .style(if share.is_active {
-                            theme::Button::Destructive
-                        } else {
-                            theme::Button::Primary
-                        })
-                        .width(Length::Fill)
-                        .padding(8),
                     ]
                     .spacing(6),
                 )
@@ -370,7 +372,7 @@ impl ForwarderApp {
                     row![
                         text(lang.get("label_wan"))
                             .size(16)
-                            .style(theme::Text::Color(colors::TITLE_BLUE)),
+                            .style(theme::Text::Color(self.color_title())),
                         horizontal_space().width(Length::Fill),
                         button(lang.get("btn_detect"))
                             .on_press(Message::DetectSystemForward)
@@ -392,7 +394,7 @@ impl ForwarderApp {
                     row![
                         text(lang.get("label_lan"))
                             .size(16)
-                            .style(theme::Text::Color(colors::TITLE_BLUE)),
+                            .style(theme::Text::Color(self.color_title())),
                         horizontal_space().width(Length::Fill),
                         button(
                             text(format!("➕ {}", lang.get("btn_add_new")))
@@ -442,7 +444,7 @@ impl ForwarderApp {
                         column![
                             text(lang.get("label_current_share"))
                                 .size(16)
-                                .style(theme::Text::Color(colors::TITLE_BLUE),),
+                                .style(theme::Text::Color(self.color_title()),),
                             list,
                         ]
                         .spacing(10),
@@ -500,7 +502,7 @@ impl ForwarderApp {
     pub fn view_forward_page(&self) -> Element<'_, Message> {
         let lang = self.language;
 
-        let list = self
+        let list_raw = self
             .port_forwarders
             .iter()
             .fold(column![].spacing(15), |col, f| {
@@ -508,9 +510,12 @@ impl ForwarderApp {
                     container(
                         column![
                             row![
-                                container(text(f.protocol.to_string()).size(12))
-                                    .padding([2, 8])
-                                    .style(theme::Container::Custom(Box::new(BadgeStyle))),
+                                pick_list(
+                                    &[Protocol::Tcp, Protocol::Udp][..],
+                                    Some(f.protocol),
+                                    move |v| Message::ProtocolChanged(f.id, v),
+                                )
+                                .padding([2, 8]),
                                 text_input("Src IP", &f.src_addr)
                                     .on_input(move |v| Message::SrcAddrChanged(f.id, v))
                                     .width(Length::Fill),
@@ -537,7 +542,7 @@ impl ForwarderApp {
                                     .style(theme::Text::Color(if f.is_active {
                                         colors::STATUS_GREEN
                                     } else {
-                                        colors::TEXT_DIM
+                                        self.color_text_dim()
                                     }))
                                     .width(Length::Fill),
                                 button(if f.is_active {
@@ -566,6 +571,7 @@ impl ForwarderApp {
                     .style(theme::Container::Box),
                 )
             });
+        let list: Element<Message> = container(list_raw).padding([0, 14, 0, 0]).into();
 
         column![
             row![

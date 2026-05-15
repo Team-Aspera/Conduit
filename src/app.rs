@@ -48,6 +48,7 @@ pub struct ForwarderApp {
     pub(crate) current_page: Page,
     pub(crate) language: Language,
     pub(crate) close_behavior: CloseBehavior,
+    pub(crate) app_theme: AppTheme,
 
     pub(crate) logo_only: Handle,
     pub(crate) logo_full: Handle,
@@ -85,7 +86,7 @@ impl Application for ForwarderApp {
             })
             .collect();
 
-        let (sys_active, active_wans, _) = network::detect_system_forward_status();
+        let (sys_active, active_wans) = network::probe_system_forward();
         let report = network::get_system_network_report();
         let cfg = AppConfig::load();
 
@@ -134,6 +135,7 @@ impl Application for ForwarderApp {
                 current_page: Page::SystemForward,
                 language: cfg.language,
                 close_behavior: cfg.close_behavior,
+                app_theme: cfg.theme,
                 logo_only,
                 logo_full,
                 #[cfg(not(target_os = "linux"))]
@@ -158,6 +160,13 @@ impl Application for ForwarderApp {
 
     fn title(&self) -> String {
         "Conduit".to_string()
+    }
+
+    fn theme(&self) -> Theme {
+        match self.app_theme {
+            AppTheme::Light => Theme::Light,
+            AppTheme::Dark => Theme::Dark,
+        }
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
@@ -235,6 +244,13 @@ impl Application for ForwarderApp {
                         f.status = self.language.get("status_ready").into();
                     }
                 }
+                self.save_config();
+            }
+            Message::ToggleTheme => {
+                self.app_theme = match self.app_theme {
+                    AppTheme::Light => AppTheme::Dark,
+                    AppTheme::Dark => AppTheme::Light,
+                };
                 self.save_config();
             }
             Message::SwitchPage(page) => self.current_page = page,
@@ -449,6 +465,12 @@ impl Application for ForwarderApp {
                     status: self.language.get("status_ready").into(),
                     stop_tx: None,
                 });
+                self.save_config();
+            }
+            Message::ProtocolChanged(id, protocol) => {
+                if let Some(f) = self.port_forwarders.iter_mut().find(|f| f.id == id) {
+                    f.protocol = protocol;
+                }
                 self.save_config();
             }
             Message::RemoveForwarder(id) => {
@@ -721,6 +743,13 @@ impl Application for ForwarderApp {
                             theme::Button::Secondary
                         })
                         .padding(5),
+                    button(if self.app_theme == AppTheme::Light {
+                        text("☀").shaping(iced::widget::text::Shaping::Advanced)
+                    } else {
+                        text("🌙").shaping(iced::widget::text::Shaping::Advanced)
+                    })
+                    .on_press(Message::ToggleTheme)
+                    .padding(5),
                 ]
                 .spacing(5)
                 .align_items(Alignment::Center)
@@ -753,10 +782,32 @@ impl Application for ForwarderApp {
 }
 
 impl ForwarderApp {
+    pub fn color_title(&self) -> iced::Color {
+        match self.app_theme {
+            AppTheme::Dark => iced::Color::from_rgb(0.58, 0.70, 1.0),
+            AppTheme::Light => crate::colors::TITLE_BLUE,
+        }
+    }
+
+    pub fn color_text_muted(&self) -> iced::Color {
+        match self.app_theme {
+            AppTheme::Dark => iced::Color::from_rgb(0.65, 0.65, 0.65),
+            AppTheme::Light => crate::colors::TEXT_GRAY,
+        }
+    }
+
+    pub fn color_text_dim(&self) -> iced::Color {
+        match self.app_theme {
+            AppTheme::Dark => iced::Color::from_rgb(0.55, 0.55, 0.55),
+            AppTheme::Light => crate::colors::TEXT_DIM,
+        }
+    }
+
     fn save_config(&self) {
         let cfg = AppConfig {
             language: self.language,
             close_behavior: self.close_behavior,
+            theme: self.app_theme,
             forwarders: self
                 .port_forwarders
                 .iter()

@@ -13,6 +13,13 @@ pub enum Language {
     Chinese,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum AppTheme {
+    #[default]
+    Light,
+    Dark,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CloseBehavior {
     Minimize,
@@ -115,6 +122,7 @@ fn config_path() -> PathBuf {
 pub struct AppConfig {
     pub language: Language,
     pub close_behavior: CloseBehavior,
+    pub theme: AppTheme,
     pub forwarders: Vec<PortForwarderConfig>,
     pub lan_shares: Vec<LanShareConfig>,
 }
@@ -142,6 +150,7 @@ impl Default for AppConfig {
         Self {
             language: Language::Chinese,
             close_behavior: CloseBehavior::Quit,
+            theme: AppTheme::Light,
             forwarders: vec![],
             lan_shares: vec![LanShareConfig::default()],
         }
@@ -171,6 +180,7 @@ pub enum Message {
     SetRefreshInterval(u64),
     AddForwarder,
     RemoveForwarder(Uuid),
+    ProtocolChanged(Uuid, Protocol),
     SrcAddrChanged(Uuid, String),
     SrcPortChanged(Uuid, String),
     DstAddrChanged(Uuid, String),
@@ -182,6 +192,7 @@ pub enum Message {
     ExportConfig,
     ConfigFileToExportSelected(Option<PathBuf>),
     LanguageChanged(Language),
+    ToggleTheme,
     Exit,
 }
 

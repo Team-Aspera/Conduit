@@ -108,19 +108,68 @@ pub fn get_system_network_report() -> SystemReport {
     report
 }
 
+/// 快速检测（不弹密码，用于启动时初始化）
+pub fn probe_system_forward() -> (bool, Vec<String>) {
+    let ip_forward = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
+        .unwrap_or_default()
+        .trim()
+        == "1";
+
+    let wans = if let Ok(output) = Command::new("iptables").args(["-t", "nat", "-S"]).output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout
+            .lines()
+            .filter(|l| l.contains("MASQUERADE"))
+            .filter_map(|l| {
+                let parts: Vec<&str> = l.split_whitespace().collect();
+                parts
+                    .iter()
+                    .position(|&r| r == "-o")
+                    .and_then(|pos| parts.get(pos + 1).map(|s| s.to_string()))
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    (ip_forward && !wans.is_empty(), wans)
+}
+
+/// 提权检测（走 pkexec，用于用户主动点"检测状态"）
 pub fn detect_system_forward_status() -> (bool, Vec<String>, bool) {
-    let report = get_system_network_report();
+    let ip_forward = std::fs::read_to_string("/proc/sys/net/ipv4/ip_forward")
+        .unwrap_or_default()
+        .trim()
+        == "1";
+
+    let output = match Command::new("pkexec")
+        .arg("sh")
+        .arg("-c")
+        .arg("iptables -t nat -S")
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return (false, vec![], true),
+    };
+    if !output.status.success() {
+        return (false, vec![], true);
+    }
+
     let mut active_wans = Vec::new();
-    for rule in &report.nat_masquerade {
-        let parts: Vec<&str> = rule.split_whitespace().collect();
-        if let Some(pos) = parts.iter().position(|&r| r == "-o")
-            && let Some(iface) = parts.get(pos + 1)
-        {
-            active_wans.push(iface.to_string());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.contains("MASQUERADE") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if let Some(pos) = parts.iter().position(|&r| r == "-o")
+                && let Some(iface) = parts.get(pos + 1)
+            {
+                active_wans.push(iface.to_string());
+            }
         }
     }
-    let active = report.ip_forward_enabled && !active_wans.is_empty();
-    (active, active_wans, report.iptables_failed)
+
+    let active = ip_forward && !active_wans.is_empty();
+    (active, active_wans, false)
 }
 
 // --- 系统转发控制 ---
