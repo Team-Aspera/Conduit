@@ -74,24 +74,22 @@ jobs:
       - name: Extract changelog
         id: changelog
         run: |
-          VER="${GITHUB_REF_NAME#v}"
+          export VER="${GITHUB_REF_NAME#v}"
           python3 -c "
-import re
-with open('CHANGELOG.md') as f:
-    c = f.read()
-pat = rf'## \[{re.escape(VER)}\].*?(?=\n## \[|\Z)'
-m = re.search(pat, c, re.DOTALL)
-if m:
-    body = m.group().strip()
-    # remove the ## header line
-    body = '\n'.join(body.split('\n')[1:]).strip()
-    # escape for GitHub output
-    body = body.replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D')
-    print(f'body={body}')
-" >> "$GITHUB_OUTPUT"
+          import re, os
+          ver = os.environ['VER']
+          c = open('CHANGELOG.md').read()
+          pat = rf'## \[{re.escape(ver)}\].*?(?=\n## \[|\Z)'
+          m = re.search(pat, c, re.DOTALL)
+          if m:
+              body = m.group().strip()
+              body = '\n'.join(body.split('\n')[1:]).strip()
+              body = body.replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D')
+              print(f'body={body}')
+          " >> "$GITHUB_OUTPUT"
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          body: ${{ steps.changelog.outputs.body }}
+          body: '${{ steps.changelog.outputs.body }}'
           files: dist/*
