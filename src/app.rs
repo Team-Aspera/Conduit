@@ -16,6 +16,7 @@ use tray_icon::{TrayIcon, TrayIconBuilder};
 #[cfg(target_os = "linux")]
 struct ConduitTray {
     tx: iced::futures::channel::mpsc::Sender<Message>,
+    lang: Language,
 }
 
 #[cfg(target_os = "linux")]
@@ -37,11 +38,7 @@ impl ksni::Tray for ConduitTray {
                 );
                 let mut raw = small.into_raw();
                 for pixel in raw.chunks_exact_mut(4) {
-                    let a = pixel[3];
-                    pixel[3] = pixel[2]; // B
-                    pixel[2] = pixel[1]; // G
-                    pixel[1] = pixel[0]; // R
-                    pixel[0] = a;        // A first
+                    pixel.rotate_right(1); // RGBA → ARGB
                 }
                 icons.push(ksni::Icon {
                     width: size as i32,
@@ -68,6 +65,41 @@ impl ksni::Tray for ConduitTray {
         tokio::spawn(async move {
             let _ = tx.send(Message::TrayClicked).await;
         });
+    }
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::*;
+        let show = match self.lang {
+            Language::Chinese => "显示窗口",
+            Language::English => "Show Window",
+        };
+        let quit = match self.lang {
+            Language::Chinese => "退出",
+            Language::English => "Quit",
+        };
+        vec![
+            MenuItem::Standard(StandardItem {
+                label: show.into(),
+                icon_name: "window-new".into(),
+                activate: Box::new(|this: &mut Self| {
+                    let mut tx = this.tx.clone();
+                    tokio::spawn(async move {
+                        let _ = tx.send(Message::TrayClicked).await;
+                    });
+                }),
+                ..Default::default()
+            }),
+            MenuItem::Standard(StandardItem {
+                label: quit.into(),
+                icon_name: "application-exit".into(),
+                activate: Box::new(|this: &mut Self| {
+                    let mut tx = this.tx.clone();
+                    tokio::spawn(async move {
+                        let _ = tx.send(Message::Exit).await;
+                    });
+                }),
+                ..Default::default()
+            }),
+        ]
     }
 }
 
@@ -145,7 +177,7 @@ impl Application for ForwarderApp {
         #[cfg(target_os = "linux")]
         {
             let (tx, _rx) = iced::futures::channel::mpsc::channel(100);
-            let tray = ConduitTray { tx };
+            let tray = ConduitTray { tx, lang: cfg.language };
             tokio::spawn(async move {
                 let _ = tray.spawn().await;
             });
