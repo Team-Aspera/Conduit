@@ -21,8 +21,8 @@ jobs:
 
       - name: Install Rust (nightly)
         run: |
-          rustup update nightly
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-10 --allow-downgrade
+          rustup default nightly-2026-05-10
 
       - name: Install system dependencies
         run: |
@@ -56,8 +56,8 @@ jobs:
 
       - name: Install Rust (nightly)
         run: |
-          rustup update nightly
-          rustup default nightly
+          rustup toolchain install nightly-2026-05-10 --allow-downgrade
+          rustup default nightly-2026-05-10
 
       - name: Install system dependencies
         run: |
